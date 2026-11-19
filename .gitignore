@@ -6,3 +6,6 @@ dist/
 sample_data/example_core/out/
 .DS_Store
 sample_data/example_core/affiliations.csv
+.omc/
+.claude/
+*_cache.json
