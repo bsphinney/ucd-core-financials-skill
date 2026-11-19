@@ -242,14 +242,21 @@ PO_PREAMBLE = [["UCD Comprehensive Spend Report"], [], ["Report Run Date", "2026
                ["Project Expenditure Type", "All", "Project Task", "All"], []]
 
 
-def pnl_rows():
-    vals = [(DEPT, "12100", "EXAMPLE SIDE PROJECT", 0, 520, -520, 0),
-            (None, None, PROJECT_DESC, -21500.0, -812000.0, 790500.0, -43000.0),
-            (DEPT, "13U00", PROJECT_DESC, 0, -60000.0, 97200.0, 37200.0),
-            (DEPT, "16200", PROJECT_DESC, -81000.0, 0, 31000.0, -50000.0)]
-    rows = [dict(zip(PNL_COLS, v)) for v in vals]
-    tot = [sum(v[i] for v in vals) for i in range(3, 7)]
-    rows.append(dict(zip(PNL_COLS, ["Grand Total", None, None] + tot)))
+def pnl_rows(gl):
+    """FY2026 Department P&L built from the sample ledger, so its activity reconciles with the GL."""
+    begin = {"12100": -21500.0, "13U00": 0.0, "16200": -81000.0}
+    rows = [dict(zip(PNL_COLS, (DEPT, "12100", "EXAMPLE SIDE PROJECT", 0, 520, -520, 0)))]
+    tot = [0.0, 0.0, 0.0, 0.0]
+    for i, fund in enumerate(["12100", "13U00", "16200"]):
+        fy = [r for r in gl if r["fund"] == fund and datetime(2025, 7, 1) <= r["date"] < datetime(2026, 7, 1)]
+        rev = round(sum(r["amount"] for r in fy if r["account"][0] in "47"), 2)
+        exp = round(sum(r["amount"] for r in fy if r["account"][0] == "5"), 2)
+        end = round(begin[fund] + rev + exp, 2)
+        rows.append(dict(zip(PNL_COLS, (None if i == 0 else DEPT, None if i == 0 else fund, PROJECT_DESC,
+                                        begin[fund], rev, exp, end))))
+        for j, v in enumerate((begin[fund], rev, exp, end)):
+            tot[j] += v
+    rows.append(dict(zip(PNL_COLS, ["Grand Total", None, None] + [round(t, 2) for t in tot])))
     return rows
 
 
@@ -363,7 +370,7 @@ def generate(out_dir, seed: int = 2026) -> None:
                                                          "Project", "Activity", "Inter Entity"]] + [[]]
     _write(out / "gl_wide_2025-03.xlsx", WIDE_COLS, gl_wide_rows(gl), "Sheet1", preamble=wide_pre)
     _write(out / "po_spend_2023-12_to_2026-04.xlsx", PO_COLS, po_rows(rng), "Sheet1", preamble=PO_PREAMBLE)
-    _write(out / "pnl_fy2026.xlsx", PNL_COLS, pnl_rows(), "Balances")
+    _write(out / "pnl_fy2026.xlsx", PNL_COLS, pnl_rows(gl), "Balances")
     _write(out / "glide_fy2026.xlsx", GLIDE_COLS, glide_rows(rng), "page")
     _write(out / "ppms_order_details.xlsx", ORDER_COLS, order_rows(rng), "Order details report")
     (out / "core-config.yaml").write_text(CONFIG)

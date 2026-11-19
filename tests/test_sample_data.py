@@ -68,3 +68,12 @@ def test_committed_sample_matches_generator(generated):
     _, committed = _load(ROOT / "sample_data" / "example_core")
     assert fresh["gl"]["amount"].sum() == pytest.approx(committed["gl"]["amount"].sum())
     assert len(fresh["orders"]) == len(committed["orders"])
+
+
+def test_sample_pnl_reconciles_with_sample_ledger(sample):
+    from core_financials import finance as F
+    from core_financials.checks import run_checks
+    fin = F.compute_finance(sample["gl"], sample["cfg"], None, pnl=sample["balances"])
+    assert fin["bridge"]["pnl_fy"] == 2026
+    c = [c for c in run_checks(fin, None, []) if c.name.startswith("bridge ending")]
+    assert c and c[0].passed
