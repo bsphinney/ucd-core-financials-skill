@@ -44,3 +44,14 @@ def test_missing_input_skips(sample, tmp_path):
     assert set(written) == {"customer_mix", "concentration", "new_vs_returning", "turnaround", "backlog",
                             "orders_heatmap"}
     assert not (tmp_path / "internal").exists() or not any((tmp_path / "internal").iterdir())
+
+
+def test_stale_figures_from_earlier_run_are_removed(sample, tmp_path):
+    from core_financials.figures import render_figures
+    (tmp_path / "share").mkdir()
+    (tmp_path / "share" / "turnaround.png").write_bytes(b"old")
+    (tmp_path / "share" / "notes.txt").write_text("mine")
+    out = render_figures(sample["fin"], None, sample["cfg"], tmp_path)
+    assert "turnaround" not in out
+    assert not (tmp_path / "share" / "turnaround.png").exists()
+    assert (tmp_path / "share" / "notes.txt").exists()

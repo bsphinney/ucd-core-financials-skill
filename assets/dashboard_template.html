@@ -282,12 +282,16 @@ if(U){
   const nv=U.new_vs_returning;
   new Chart(canvas(u3),{type:"bar",data:{labels:nv.map(r=>fyLabel(r.fy,uc)),datasets:[{label:"New labs",data:nv.map(r=>r.new),backgroundColor:PAL[2]},{label:"Returning labs",data:nv.map(r=>r.returning),backgroundColor:PAL[1]}]},options:{maintainAspectRatio:false,plugins:{title:{display:true,text:"New and returning labs",color:"#eef2f7"}},scales:{x:{grid:{display:false}}}}});
   const bl=U.backlog_monthly;
-  new Chart(canvas(u4),{type:"line",data:{labels:bl.map(r=>r.month),datasets:[{label:"Open orders",data:bl.map(r=>r.open),borderColor:PAL[4],backgroundColor:"rgba(232,106,59,.15)",fill:true,pointRadius:0,borderWidth:2}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},title:{display:true,text:"Backlog: accepted, not yet completed (month end)",color:"#eef2f7"}},scales:{x:{grid:{display:false},ticks:{maxTicksLimit:12}}}}});
+  const NOT_MEAS=`In this core's PPMS, ${pct(U.turnaround.same_moment_share)} of orders were placed, accepted and completed within the same hour, usually because they are entered at billing time. PPMS dates therefore cannot show turnaround or backlog. To measure them, accept orders in PPMS when samples arrive and complete them when results are delivered.`;
+  if(!bl.length)u4.appendChild(el("div",{className:"missing"},esc(NOT_MEAS)));
+  else new Chart(canvas(u4),{type:"line",data:{labels:bl.map(r=>r.month),datasets:[{label:"Open orders",data:bl.map(r=>r.open),borderColor:PAL[4],backgroundColor:"rgba(232,106,59,.15)",fill:true,pointRadius:0,borderWidth:2}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},title:{display:true,text:"Backlog: accepted, not yet completed (month end)",color:"#eef2f7"}},scales:{x:{grid:{display:false},ticks:{maxTicksLimit:12}}}}});
 
   const sTa=section("turnaround","Turnaround","Days from accepted to completed. Median, and the middle half of orders (25th–75th percentile).");
+  if(U.turnaround.measurable===false){sTa.appendChild(el("div",{className:"missing"},esc(NOT_MEAS)));}else{
   sTa.appendChild(el("div",null,`<table><tr><th>Service</th><th class="num">Orders</th><th class="num">Median days</th><th class="num">25th–75th pct</th></tr>`+U.turnaround.by_service.map(s=>`<tr><td>${esc(s.service)}</td><td class="num">${s.n}</td><td class="num">${s.median.toFixed(1)}</td><td class="num">${s.p25.toFixed(0)}–${s.p75.toFixed(0)}</td></tr>`).join("")+"</table>"));
   const q=U.turnaround.by_quarter;
   new Chart(canvas(sTa,"short"),{type:"line",data:{labels:q.map(r=>r.quarter),datasets:[{label:"Median days",data:q.map(r=>r.median),borderColor:GOLD,pointRadius:3,borderWidth:2}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}}}}});
+  }
 
   const sH=section("seasonality","Busy and quiet months","Orders placed per month, by fiscal year.");
   const hm=U.orders_heatmap, mx=Math.max(1,...hm.counts.flat()), names=["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];

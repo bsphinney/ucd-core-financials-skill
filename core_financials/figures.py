@@ -266,7 +266,7 @@ def _new_vs_returning(use, save):
 
 def _turnaround(use, save):
     t = use["turnaround"]
-    if not t["by_service"]:
+    if not t.get("measurable", True) or not t["by_service"]:
         return
     svc = t["by_service"][:8]
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2), gridspec_kw={"width_ratios": [1.1, 1]})
@@ -275,7 +275,8 @@ def _turnaround(use, save):
     ax1.hlines(list(y), [s["p25"] for s in svc], [s["p75"] for s in svc], color=PALETTE[1], lw=6, alpha=0.4)
     ax1.plot([s["median"] for s in svc], list(y), "o", color=PALETTE[1], ms=8)
     for i, s in enumerate(svc):
-        ax1.text(s["p75"] + 0.5, i, f"{s['median']:.0f} d", va="center", fontsize=8.5, color=INK)
+        ax1.annotate(f"{s['median']:.0f} d", (s["p75"], i), xytext=(6, 0), textcoords="offset points",
+                     va="center", fontsize=8.5, color=INK)
     ax1.set_yticks(list(y), [f"{s['service']} (n={s['n']})" for s in svc], fontsize=8.5)
     ax1.invert_yaxis()
     ax1.set_xlabel("days from accepted to completed (dot = median, bar = middle half)")
@@ -422,6 +423,11 @@ def _assessment_dollars(fin, save):
 
 def render_figures(fin, use, cfg, out_dir, aggie: dict | None = None) -> dict:
     written: dict = {}
+    # Remove this tool's own figures from an earlier run, so a chart that no longer applies cannot linger.
+    for sub, names in (("share", SHARE), ("internal", INTERNAL)):
+        for name in names:
+            for ext in ("png", "svg"):
+                (Path(out_dir) / sub / f"{name}.{ext}").unlink(missing_ok=True)
     save = _Saver(Path(out_dir), cfg, written)
     if fin:
         _cost_recovery(fin, save)

@@ -81,3 +81,22 @@ def test_compute_usership_keys(orders):
 def test_turnaround_by_fy(orders):
     t = {r["fy"]: r for r in U.turnaround(orders)["by_fy"]}
     assert t[2024]["median"] == pytest.approx(10) and t[2025]["n"] == 2
+
+
+def test_turnaround_flags_orders_entered_at_billing(orders):
+    assert U.turnaround(orders)["measurable"] is True
+    same = orders.copy()
+    same["accepted"] = same["ordered"] + pd.Timedelta(seconds=14)
+    same["completed"] = same["ordered"] + pd.Timedelta(seconds=30)
+    t = U.turnaround(same)
+    assert t["measurable"] is False and t["same_moment_share"] == 1.0
+    assert U.compute_usership(same, {})["backlog_monthly"] == []
+
+
+def test_turnaround_figure_skipped_when_not_measurable(orders, cfg, tmp_path):
+    from core_financials.figures import render_figures
+    same = orders.copy()
+    same["accepted"] = same["ordered"] + pd.Timedelta(seconds=14)
+    same["completed"] = same["ordered"] + pd.Timedelta(seconds=30)
+    out = render_figures(None, U.compute_usership(same, {}), cfg, tmp_path)
+    assert "turnaround" not in out and "backlog" not in out

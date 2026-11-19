@@ -58,12 +58,20 @@ def new_vs_returning(orders) -> list:
     return out
 
 
+SAME_MOMENT_DAYS = 1 / 24  # accepted-to-completed under an hour
+
+
 def turnaround(orders) -> dict:
     r = _rev(orders)
     r = r[r["accepted"].notna() & r["completed"].notna()].copy()
     r["days"] = (r["completed"] - r["accepted"]).dt.total_seconds() / 86400
     r = r[r["days"] >= 0]
     r = r.drop_duplicates(subset=["order", "service", "days"])
+    # Some cores create, accept and complete PPMS orders in one sitting at billing time; then the dates
+    # say nothing about how long the work took.
+    per_order = r.groupby("order")["days"].max()
+    same = float((per_order < SAME_MOMENT_DAYS).mean()) if len(per_order) else 0.0
+    measurable = bool(len(per_order)) and same < 0.8
     r["svc"] = r["service_group"].where(r["service_group"] != "", r["service"])
     by_service = []
     for svc, sub in r.groupby("svc"):
@@ -76,7 +84,10 @@ def turnaround(orders) -> dict:
         by_quarter.append({"quarter": str(q), "median": float(sub["days"].median()), "n": int(len(sub))})
     by_fy = [{"fy": int(fy), "median": float(sub["days"].median()), "n": int(len(sub))}
              for fy, sub in r.groupby("fy")]
-    return {"by_service": by_service, "by_quarter": by_quarter, "by_fy": by_fy}
+    if not measurable:
+        by_service, by_quarter, by_fy = [], [], []
+    return {"by_service": by_service, "by_quarter": by_quarter, "by_fy": by_fy, "measurable": measurable,
+            "same_moment_share": round(same, 4)}
 
 
 def backlog_monthly(orders) -> list:
@@ -135,8 +146,8 @@ def compute_usership(orders, aff) -> dict:
         "mix_by_fy": mix_by_fy(orders, aff),
         "concentration": concentration(orders),
         "new_vs_returning": new_vs_returning(orders),
-        "turnaround": turnaround(orders),
-        "backlog_monthly": backlog_monthly(orders),
+        "turnaround": (ta := turnaround(orders)),
+        "backlog_monthly": backlog_monthly(orders) if ta["measurable"] else [],
         "orders_heatmap": orders_heatmap(orders),
         "revenue_by_service": revenue_by_service(orders),
         "top_groups": top_groups(orders, aff),
