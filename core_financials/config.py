@@ -30,6 +30,7 @@ class Config:
     assessment_note: str | None = None
     coa: dict = field(default_factory=dict)
     publications: dict = field(default_factory=dict)
+    paid_staff: int | None = None
 
 
 def load_coa(overrides: dict | None = None) -> dict:
@@ -84,6 +85,7 @@ def load_config(path) -> Config:
         rcci_window=window,
         assessment_note=raw.get("assessment_note"),
         coa=load_coa(raw.get("coa_overrides")),
+        paid_staff=int(raw["paid_staff"]) if raw.get("paid_staff") is not None else None,
         publications=_pub_settings(raw.get("publications"), name),
     )
 
@@ -97,6 +99,10 @@ project: "{project}"              # recharge project number (optional)
 # Funds to analyse. role: operating | reserve | general | workshop | other
 funds:
 {funds}
+# Paid staff (FTE heads). With 2 or fewer, no staff edition is built: its yearly personnel
+# totals would reveal individual pay.
+paid_staff: null
+
 # Account-code prefixes that are personnel (removed in the staff edition)
 personnel_prefixes: ["50"]
 

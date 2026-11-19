@@ -108,6 +108,9 @@ def _build(folder: Path) -> int:
             print(f"  ✗ {c['name']}: {c['detail']}")
     else:
         print(f"\nAll {sum(c['kind'] == 'arithmetic' for c in res['checks'])} reconciliation checks passed.")
+    if any(Path(p).name == "dashboard_STAFF.html" for p in res["outputs"]):
+        print("\ndashboard_STAFF.html hides individual salary accounts and transactions, but still shows "
+              "yearly personnel totals. With few staff, those can reveal someone's pay.")
     print("\nshare/ is safe to show other cores. internal/, dashboard*.html and usership.xlsx contain dollar "
           "amounts and lab names.")
     return 0

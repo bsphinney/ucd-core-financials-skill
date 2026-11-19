@@ -25,6 +25,10 @@ Ask the user for (or create) one folder for the exports. Then:
 python run.py init <folder>
 ```
 
+Ask how many paid staff the core has and set `paid_staff`. With 2 or fewer, no staff
+edition is built: its yearly personnel totals would show what each person is paid. Tell the
+user that is why.
+
 `init` writes `core-config.yaml`. If a GL export is already in the folder it proposes the
 funds, department code and project number it found. **Ask** the user to confirm:
 - the core's full name and short name;

@@ -9,7 +9,8 @@
 | `financial_department` | Aggie Enterprise Financial Department code | `XIMG001` |
 | `project` | Recharge project number (optional) | `AR09999901` |
 | `funds` | Funds to analyse, each with a label and a role | see below |
-| `personnel_prefixes` | Account prefixes treated as personnel; removed from the staff edition | `["500", "501", "505", "506", "508"]` |
+| `personnel_prefixes` | Account prefixes treated as personnel; removed from the staff edition | `["50"]` |
+| `paid_staff` | Paid staff headcount. With 2 or fewer, no staff edition is built, because its yearly personnel totals would reveal individual pay | `null` (unknown: edition built, with a warning) |
 | `brand` | Dashboard colours | `{primary: "#022851", accent: "#FFBF00"}` |
 | `rcci_window` | Date window (Date Ordered) for RCCI Tables 1 and 2 | `{start: "2024-07-01", end: "2025-06-30"}` |
 | `assessment_note` | Your own sentence for the assessment panel; `null` keeps the neutral default | `null` |

@@ -15,6 +15,9 @@ from .inventory import reports_needed_md, scan
 from .ppms import load_orders
 
 
+SMALL_CORE_STAFF = 2  # at or below this, personnel totals identify individual pay
+
+
 class BuildError(Exception):
     pass
 
@@ -86,7 +89,14 @@ def run_build(folder, out=None) -> dict:
 
     checks = run_checks(fin, use, ag.get("po_vs_gl"))
     outputs.append(write_checks_md(checks, out / "checks.md"))
-    for staff, name in ((False, "dashboard.html"), (True, "dashboard_STAFF.html")):
+    editions = [(False, "dashboard.html"), (True, "dashboard_STAFF.html")]
+    if cfg.paid_staff is not None and cfg.paid_staff <= SMALL_CORE_STAFF:
+        editions = editions[:1]
+        (out / "dashboard_STAFF.html").unlink(missing_ok=True)
+        skipped.append({"section": "staff edition (dashboard_STAFF.html)",
+                        "reason": f"{cfg.paid_staff} paid staff: its yearly personnel totals would reveal "
+                                  "individual pay"})
+    for staff, name in editions:
         outputs.append(write_dashboard(build_dashboard_data(fin, use, ag, checks, cfg, staff), cfg, out / name))
     figs = render_figures(fin, use, cfg, out, aggie=ag)
     outputs += [p for paths in figs.values() for p in paths]
