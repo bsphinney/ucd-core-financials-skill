@@ -74,7 +74,9 @@ def turnaround(orders) -> dict:
     by_quarter = []
     for q, sub in r.groupby(r["completed"].dt.to_period("Q")):
         by_quarter.append({"quarter": str(q), "median": float(sub["days"].median()), "n": int(len(sub))})
-    return {"by_service": by_service, "by_quarter": by_quarter}
+    by_fy = [{"fy": int(fy), "median": float(sub["days"].median()), "n": int(len(sub))}
+             for fy, sub in r.groupby("fy")]
+    return {"by_service": by_service, "by_quarter": by_quarter, "by_fy": by_fy}
 
 
 def backlog_monthly(orders) -> list:

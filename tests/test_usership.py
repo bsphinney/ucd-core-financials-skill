@@ -76,3 +76,8 @@ def test_compute_usership_keys(orders):
     for k in ["overview_by_fy", "mix_by_fy", "concentration", "new_vs_returning", "turnaround", "backlog_monthly",
               "orders_heatmap", "revenue_by_service", "top_groups", "unbilled", "quotes", "complete_fys"]:
         assert k in out, k
+
+
+def test_turnaround_by_fy(orders):
+    t = {r["fy"]: r for r in U.turnaround(orders)["by_fy"]}
+    assert t[2024]["median"] == pytest.approx(10) and t[2025]["n"] == 2
