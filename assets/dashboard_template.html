@@ -146,6 +146,7 @@ function accountModal(acct){
     const bySup={};d.subledger.forEach(l=>{bySup[l.supplier||"(no supplier)"]=(bySup[l.supplier||"(no supplier)"]||0)+l.amount;});
     h+=`<h4>Invoice lines with supplier (from the GL and Subledger Detail export, ${d.subledger.length} lines)</h4><p class="note">Covers only the months that export was pulled for; the totals above come from the standard ledger.</p><table>`+Object.entries(bySup).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([s,v])=>`<tr><td>${esc(s)}</td><td class="num">${usd(v)}</td></tr>`).join("")+"</table>";
   }
+  if(M.staff){openModal(acct+" — "+d.desc,h+`<p class="note">Transaction detail is not included in the staff edition.</p>`);return;}
   h+=`<h4>Transactions (${d.transactions.length})</h4><input class="filter" id="txf" placeholder="Filter by text, supplier, journal, date…"><div id="txt"></div>`;
   openModal(acct+" — "+d.desc,h,()=>{
     const render=q=>{q=(q||"").toLowerCase();const rows=d.transactions.filter(t=>!q||JSON.stringify(t).toLowerCase().includes(q));
@@ -246,7 +247,8 @@ if(F){
     new Chart(canvas(b2),{type:"bar",data:{labels:F.bridge.steps.map(s=>s.step),datasets:[{label:"FY"+F.bridge.fy,data:bars,backgroundColor:F.bridge.steps.map((s,i)=>i===0||s.step.startsWith("=")?NEUTRAL:(s.amount<0?BAD:GOOD)),borderRadius:3}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},title:{display:true,text:"What moved the balance in FY"+F.bridge.fy,color:"#eef2f7"},tooltip:{callbacks:{label:c=>usd(F.bridge.steps[c.dataIndex].amount)}}},scales:{y:moneyAxis(),x:{grid:{display:false}}}}});}
   const fc=F.forecast;
   sB.appendChild(el("div",{className:"note"},fc?`<strong>FY${fc.fy} forecast (projection):</strong> ${usd(fc.ytd_net)} net after ${fc.months_seen} months; projected year-end net ${usd(fc.projected)} (range ${usd(fc.low)} to ${usd(fc.high)}), assuming the remaining months go as they did in ${fc.based_on_fys.map(f=>"FY"+f).join(", ")}.`:"No forecast: the latest fiscal year is complete, has fewer than 3 months posted so far, or there is no earlier complete year to project from."));
-  if(F.bridge.steps.length&&!(A.balances&&A.balances.length))sB.appendChild(el("p",{className:"note"},"Beginning balance set to $0 because no Department P&L was provided."));
+  if(F.bridge.steps.length&&F.bridge.pnl_fy==null)sB.appendChild(el("p",{className:"note"},(A.balances&&A.balances.length)?"Beginning balance set to $0: the Department P&L's activity did not match any fiscal year in the ledger, so its balance could not be placed. Check that it covers the same funds.":"Beginning balance set to $0 because no Department P&L was provided."));
+  else if(F.bridge.steps.length&&F.bridge.pnl_fy!==F.bridge.fy)sB.appendChild(el("p",{className:"note"},`Beginning balance rolled back from the FY${F.bridge.pnl_fy} Department P&L using the ledger's operating net.`));
 
   const sF=section("carryforward","Net position carry-forward (reference only)","Account 300001 holds prior-year balances rolled forward each July. It is excluded from every operating figure above and listed here so nothing is dropped silently.");
   sF.appendChild(el("div",null,F.carryforward.length?`<table><tr><th>Fund</th><th>FY</th><th class="num">Amount</th></tr>`+F.carryforward.map(r=>`<tr><td>${esc(M.funds[r.fund]||r.fund)}</td><td>FY${r.fy}</td><td class="num">${usd(r.amount)}</td></tr>`).join("")+"</table>":`<p class="note">No carry-forward entries in this export.</p>`));

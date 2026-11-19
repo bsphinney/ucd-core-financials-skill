@@ -161,20 +161,28 @@ def sankey(gl, cfg) -> list:
     return links
 
 
+def _buckets(gl, cfg) -> tuple:
+    """(personnel, supplies & services, everything else). Groups not named in a bucket count as other."""
+    groups = expense_groups(gl, cfg)
+    b = cfg.coa["per_dollar_buckets"]
+    pers_names = set(b.get("personnel", [])) | {g["name"] for g in cfg.coa["expense_groups"] if g.get("personnel")}
+    pers = sum(g["amount"] for g in groups if g["name"] in pers_names)
+    sup = sum(g["amount"] for g in groups if g["name"] in set(b.get("supplies_services", [])) - pers_names)
+    return pers, sup, sum(g["amount"] for g in groups) - pers - sup
+
+
 def per_dollar(gl, cfg, fy: int | None = None) -> dict | None:
     if fy is not None:
         gl = gl[gl["fy"] == fy]
     gross = sum(g["amount"] for g in revenue_groups(gl, cfg))
     if gross <= 0:
         return None
-    groups = {g["name"]: g["amount"] for g in expense_groups(gl, cfg)}
-    b = cfg.coa["per_dollar_buckets"]
-    pick = lambda names: sum(groups.get(n, 0.0) for n in names)  # noqa: E731
-    other = pick(b["other_operating"]) + sum(d["amount"] for d in deductions(gl, cfg)) \
+    pers, sup, other_exp = _buckets(gl, cfg)
+    other = other_exp + sum(d["amount"] for d in deductions(gl, cfg)) \
         + float(gl.loc[gl["role"] == "contra", "amount"].sum())
     out = {
-        "personnel": pick(b["personnel"]) / gross,
-        "supplies_services": pick(b["supplies_services"]) / gross,
+        "personnel": pers / gross,
+        "supplies_services": sup / gross,
         "other_operating": other / gross,
         "assessment": float(gl.loc[gl["role"] == "assessment", "amount"].sum()) / gross,
     }
@@ -231,17 +239,15 @@ def balance_series(gl) -> list:
 
 def bridge(gl, cfg, fy: int, beginning: float | None) -> list:
     sub = gl[gl["fy"] == fy]
-    b = cfg.coa["per_dollar_buckets"]
-    groups = {g["name"]: g["amount"] for g in expense_groups(sub, cfg)}
-    pick = lambda names: sum(groups.get(n, 0.0) for n in names)  # noqa: E731
+    pers, sup, other_exp = _buckets(sub, cfg)
     gross = sum(g["amount"] for g in revenue_groups(sub, cfg))
-    other = pick(b["other_operating"]) + sum(d["amount"] for d in deductions(sub, cfg)) \
+    other = other_exp + sum(d["amount"] for d in deductions(sub, cfg)) \
         + float(sub.loc[sub["role"] == "contra", "amount"].sum())
     steps = [
         {"step": "Beginning balance", "amount": beginning or 0},
         {"step": "+ Revenue (gross)", "amount": gross},
-        {"step": "− Personnel", "amount": -pick(b["personnel"])},
-        {"step": "− Supplies & services", "amount": -pick(b["supplies_services"])},
+        {"step": "− Personnel", "amount": -pers},
+        {"step": "− Supplies & services", "amount": -sup},
         {"step": "− Other operating", "amount": -other},
         {"step": "− Campus assessment", "amount": -float(sub.loc[sub["role"] == "assessment", "amount"].sum())},
     ]
@@ -295,7 +301,39 @@ def account_detail(gl, account: str, subledger=None) -> dict:
             "transactions": tx, "subledger": lines}
 
 
-def compute_finance(gl, cfg, balances_beginning: float | None, subledger=None) -> dict:
+def pnl_beginning(gl, pnl: list, fy: int) -> tuple:
+    """Beginning balance (surplus-positive) of fiscal year `fy`, from a Department P&L.
+
+    The P&L's own year is found by matching its activity (revenue + expense) to the GL operating net
+    of each fiscal year; the balance is then rolled forward or back with the GL nets. Returns
+    (beginning, pnl_fy, pnl_ending) or (None, None, None) when no year matches.
+    """
+    if not pnl:
+        return None, None, None
+    nets = {int(r["key"][2:]): r["net"] for r in series(gl, "FY")}
+    activity = -sum(r["revenue"] + r["expense"] for r in pnl)
+    begin = -sum(r["beginning"] for r in pnl)
+    match = [y for y, n in nets.items() if abs(n - activity) <= max(1.0, 0.005 * abs(n))]
+    if not match:
+        return None, None, None
+    p = max(match)
+    if fy <= p:
+        b = begin - sum(nets.get(y, 0.0) for y in range(fy, p))
+    else:
+        b = begin + sum(nets.get(y, 0.0) for y in range(p, fy))
+    return b, p, -sum(r["ending"] for r in pnl)
+
+
+def _bridge_block(gl, cfg, fy, beginning, pnl) -> dict:
+    if not fy:
+        return {"fy": None, "steps": [], "pnl_fy": None, "pnl_ending": None}
+    pnl_fy = pnl_end = None
+    if pnl is not None:
+        beginning, pnl_fy, pnl_end = pnl_beginning(gl, pnl, fy)
+    return {"fy": fy, "steps": bridge(gl, cfg, fy, beginning), "pnl_fy": pnl_fy, "pnl_ending": pnl_end}
+
+
+def compute_finance(gl, cfg, balances_beginning: float | None = None, subledger=None, pnl=None) -> dict:
     op = _op(gl)
     fys = sorted(int(f) for f in op["fy"].unique()) if len(op) else []
     complete = complete_fys(op["date"]) if len(op) else []
@@ -318,8 +356,7 @@ def compute_finance(gl, cfg, balances_beginning: float | None, subledger=None) -
         "fund_summary": fund_summary(gl, cfg),
         "carryforward": carryforward(gl),
         "balance_series": balance_series(gl),
-        "bridge": {"fy": latest_complete,
-                   "steps": bridge(gl, cfg, latest_complete, balances_beginning) if latest_complete else []},
+        "bridge": _bridge_block(gl, cfg, latest_complete, balances_beginning, pnl),
         "forecast": forecast(gl, cfg),
         "top_revenue": top_accounts(gl, "income"),
         "top_expense": top_accounts(gl, "expense"),

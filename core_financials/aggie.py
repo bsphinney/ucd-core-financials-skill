@@ -106,12 +106,20 @@ def balances_total(rows) -> dict:
 # ---------------------------------------------------------------- GLIDE (card / travel / freight)
 def load_glide(paths) -> pd.DataFrame:
     """Only category, fiscal year and amount are kept; person-name columns are never read into the result."""
-    frames = []
+    frames, seen = [], []
     for p in paths:
         df = read_table(p, GLIDE_SIG)
         if df is None:
             continue
         df = df[df["Report Type"].astype(str).str.strip() == "GL Expense"]
+        # The same lines pulled in two files count once; repeated lines inside one file are kept.
+        # The key uses no person-name columns.
+        key = [c for c in ["Journal Source", "Accounting Date", "GL Fund", "GL Natural Account",
+                           "GL Natural Account Name", "Debit Amount", "Credit Amount"] if c in df.columns]
+        k = df[key].astype(str).agg("|".join, axis=1)
+        k = k + "#" + k.groupby(k).cumcount().astype(str)
+        df = df[~k.isin(set().union(*seen))] if seen else df
+        seen.append(set(k))
         amt = pd.to_numeric(df["Debit Amount"], errors="coerce").fillna(0.0) \
             - pd.to_numeric(df["Credit Amount"], errors="coerce").fillna(0.0)
         dates = pd.to_datetime(df["Accounting Date"], errors="coerce")

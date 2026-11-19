@@ -38,8 +38,9 @@ def _head_rows(path: Path, sheet: str, max_rows: int) -> list[list[str]]:
         sh = xlrd.open_workbook(str(path), on_demand=True).sheet_by_name(sheet)
         return [[_clean(v) for v in sh.row_values(i)] for i in range(min(max_rows, sh.nrows))]
     if path.suffix.lower() == ".csv":
-        df = pd.read_csv(path, header=None, nrows=max_rows, dtype=str, keep_default_na=False)
-        return [[_clean(v) for v in row] for row in df.values.tolist()]
+        import csv
+        with open(path, newline="", encoding="utf-8-sig", errors="replace") as fh:
+            return [[_clean(v) for v in row] for _, row in zip(range(max_rows), csv.reader(fh))]
     from openpyxl import load_workbook
     wb = load_workbook(path, read_only=True)
     out = []
@@ -80,7 +81,7 @@ def read_table(path, signature: set[str], sheet: str | None = None) -> pd.DataFr
         return None
     sh, row = found
     if path.suffix.lower() == ".csv":
-        df = pd.read_csv(path, header=row, dtype=object)
+        df = pd.read_csv(path, skiprows=row, header=0, dtype=object)
     else:
         engine = "xlrd" if path.suffix.lower() == ".xls" else "openpyxl"
         df = pd.read_excel(path, sheet_name=sh, header=row, dtype=object, engine=engine)

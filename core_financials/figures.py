@@ -161,12 +161,22 @@ def _band(ax, x0, y0a, y0b, x1, y1a, y1b, color):
     ax.add_patch(PathPatch(MPath(verts, codes), facecolor=color, alpha=0.45, edgecolor="none"))
 
 
+def _is_revenue_inflow(name: str) -> bool:
+    return not (name.startswith("Draw on") or "(net credit)" in name)
+
+
+def _share_total(fin) -> float:
+    """Gross revenue: inflows from revenue sources only, so shares match the per-dollar figure."""
+    return float(sum(l["flow"] for l in fin["sankey"] if l["to"] == fin["core_node"] and _is_revenue_inflow(l["from"])))
+
+
 def _sankey_share(fin, cfg, save):
     links = fin["sankey"]
     core = fin["core_node"]
     ins = [l for l in links if l["to"] == core]
     outs = [l for l in links if l["from"] == core]
-    total = sum(l["flow"] for l in ins)
+    total = _share_total(fin)
+    geom = sum(l["flow"] for l in ins)
     if total <= 0:
         return
     # fold outflows under 2% into one item so labels stay legible
@@ -183,11 +193,14 @@ def _sankey_share(fin, cfg, save):
         scale = 1 - gap * (len(items) - 1)
         y_side, y_core = 1.0, 1.0
         for l, c in zip(items, colors):
-            share = l["flow"] / total
+            share = l["flow"] / geom  # geometry: both sides fill the core column
             h = share * scale
             ax.add_patch(Rectangle((x - 0.02, y_side - h), 0.04, h, color=c))
             name = l["from"] if side == "left" else l["to"]
-            ax.text(x - 0.04 if side == "left" else x + 0.04, y_side - h / 2, f"{name}  {share:.0%}",
+            pct = l["flow"] / total  # labels: share of gross revenue, as in the per-dollar figure
+            lab = f"{name}  +{pct:.0%} beyond revenue" if side == "left" and not _is_revenue_inflow(name) \
+                else f"{name}  {pct:.0%}"
+            ax.text(x - 0.04 if side == "left" else x + 0.04, y_side - h / 2, lab,
                     ha="right" if side == "left" else "left", va="center", fontsize=8.5, color=INK)
             if side == "left":
                 _band(ax, x + 0.02, y_side, y_side - h, 0.47, y_core, y_core - share, c)

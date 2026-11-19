@@ -48,10 +48,18 @@ def load_orders(paths) -> pd.DataFrame:
             "completed": _dates(_col(df, "Date Completed", None)),
             "assigned_to": _col(df, "Assigned to").fillna("").astype(str).str.strip(),
         })
+        o["_src"] = len(frames)
+        o["_fresh"] = pd.concat([o["ordered"], o["accepted"], o["completed"]]).max()
         frames.append(o)
     if not frames:
         return pd.DataFrame(columns=COLUMNS)
-    o = pd.concat(frames, ignore_index=True).drop_duplicates()
+    o = pd.concat(frames, ignore_index=True)
+    # An order line pulled in two exports counts once, from the newer export (its status may have moved
+    # on); identical lines inside one export (the same service twice on one order) are all kept.
+    key = ["order", "service", "unit_price", "qty", "ordered"]
+    o["_occ"] = o.groupby(key + ["_src"], dropna=False).cumcount()
+    o = o.sort_values(["_fresh", "_src"], ascending=False, kind="stable").drop_duplicates(subset=key + ["_occ"])
+    o = o.sort_index()
     o = o[o["ordered"].notna() & (o["group"] != "")].copy()
     o["group_key"] = o["group"].map(group_key)
     # one display spelling per group: the most common one

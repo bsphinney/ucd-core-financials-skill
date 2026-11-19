@@ -15,13 +15,14 @@ revenue_groups:            # ordered; first match wins; last is catch-all
 expense_groups:
   - {name: "Salaries & Wages", prefixes: ["500", "501"], personnel: true}
   - {name: "Benefits", prefixes: ["508", "505", "506"], personnel: true}
+  - {name: "Other Personnel", prefixes: ["50"], personnel: true}   # any other 50xxxx compensation
   - {name: "Lab Supplies & Chemicals", prefixes: ["522", "520"]}
   - {name: "Services & Repairs", prefixes: ["530", "532", "534"]}
   - {name: "Equipment", prefixes: ["525"]}
   - {name: "Freight & Shipping", prefixes: ["539"]}
   - {name: "Other Operating", catch_all: true}
 per_dollar_buckets:
-  personnel: ["Salaries & Wages", "Benefits"]
+  personnel: ["Salaries & Wages", "Benefits", "Other Personnel"]
   supplies_services: ["Lab Supplies & Chemicals", "Services & Repairs"]
   other_operating: ["Equipment", "Freight & Shipping", "Other Operating"]
 uc_domains: [ucdavis.edu, berkeley.edu, ucsf.edu, ucla.edu, uci.edu, ucsd.edu, ucsb.edu, ucsc.edu, ucr.edu, ucmerced.edu, ucop.edu, ucanr.edu, lbl.gov, llnl.gov]

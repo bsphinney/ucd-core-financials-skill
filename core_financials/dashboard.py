@@ -34,6 +34,9 @@ def _redact_fin(fin: dict, cfg) -> dict:
         if g["name"] in pers_groups or any(_personnel(a["account"], pre) for a in g["accounts"]):
             g["accounts"] = [a for a in g["accounts"] if not _personnel(a["account"], pre)]
     fin["account_details"] = {a: d for a, d in fin["account_details"].items() if not _personnel(a, pre)}
+    # Transaction lines can name people (travel reimbursements, card holders): yearly totals only.
+    for d in fin["account_details"].values():
+        d["transactions"], d["subledger"] = [], []
     top = [r for r in fin["top_expense"] if not _personnel(r["account"], pre)]
     for g in fin["expense_groups"]:
         if g["name"] in pers_groups:

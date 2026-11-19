@@ -19,6 +19,15 @@ class BuildError(Exception):
     pass
 
 
+def pick_balances(paths, cfg) -> list:
+    """Rows of the newest Department P&L only (several copies must not add up), limited to the core's funds."""
+    if not paths:
+        return []
+    newest = max(paths, key=lambda p: Path(p).stat().st_mtime)
+    rows = aggie.load_balances(newest)
+    return [r for r in rows if not cfg.funds or r["fund"] in cfg.funds]
+
+
 def run_build(folder, out=None) -> dict:
     folder = Path(folder)
     out = Path(out) if out else folder / "out"
@@ -41,12 +50,9 @@ def run_build(folder, out=None) -> dict:
     if gl is not None and gl.empty:
         skipped.append({"section": "finance", "reason": "GL files had no rows in the configured funds"})
         gl = None
-    balances = []
-    for p in by_kind.get("pnl_balances", []):
-        balances += aggie.load_balances(p)
-    beginning = -aggie.balances_total(balances)["beginning"] if balances else None
+    balances = pick_balances(by_kind.get("pnl_balances", []), cfg)
     sub = load_subledger(gl_files, cfg) if gl_files else None
-    fin = finance.compute_finance(gl, cfg, beginning, subledger=sub) if gl is not None else None
+    fin = finance.compute_finance(gl, cfg, None, subledger=sub, pnl=balances or None) if gl is not None else None
     if fin is None:
         skipped.append({"section": "finance (dashboard money sections, finance figures)",
                         "reason": "no GL Transaction Listing"})

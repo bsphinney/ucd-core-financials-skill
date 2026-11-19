@@ -32,6 +32,16 @@ def run_checks(fin: dict | None, use: dict | None, po_gl: list | None = None) ->
         net_rev = fin["gross_total"] - fin["assessment_total"] - fin["contra_total"] - fin["deductions_total"]
         out.append(_eq("gross − assessment − contra − deductions = income", net_rev, k["income"],
                        "net revenue", "operating income"))
+        br = fin.get("bridge") or {}
+        if br.get("steps") and br.get("pnl_fy") == br.get("fy"):
+            a, b = br["steps"][-1]["amount"], br["pnl_ending"]
+            ok = abs(a - b) <= 1.0  # the two systems round independently
+            out.append(Check("bridge ending = Department P&L ending balance", ok,
+                             f"bridge {_money(a)} vs P&L {_money(b)}" + ("" if ok else f" (off by {_money(a - b)})")))
+        elif br.get("pnl_fy"):
+            out.append(Check("Department P&L year", True,
+                             f"P&L is for FY{br['pnl_fy']}; FY{br['fy']} beginning balance rolled from it "
+                             "using GL operating net", "info"))
         core_name = fin.get("core_node")
         if core_name:
             inflow = sum(l["flow"] for l in fin["sankey"] if l["to"] == core_name)

@@ -34,4 +34,4 @@ def test_write_config_template_roundtrip(tmp_path):
     write_config_template(p, {"12100": "Sales and Services Rate Based"})
     cfg = load_config(p)
     assert cfg.funds["12100"]["role"] == "operating"
-    assert cfg.personnel_prefixes == ["500", "501", "505", "506", "508"]
+    assert cfg.personnel_prefixes == ["50"]

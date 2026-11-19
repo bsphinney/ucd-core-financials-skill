@@ -9,9 +9,10 @@ from pathlib import Path
 import yaml
 
 from . import SKILL_ROOT
+from .io_util import norm_code
 
 COA_PATH = SKILL_ROOT / "reference" / "ucd-chart-of-accounts.yaml"
-DEFAULT_PERSONNEL = ["500", "501", "505", "506", "508"]
+DEFAULT_PERSONNEL = ["50"]  # every 50xxxx account is compensation or benefits
 DEFAULT_BRAND = {"primary": "#022851", "accent": "#FFBF00"}
 FUND_ROLE_GUESS = {"12100": "operating", "16200": "reserve", "13U00": "general", "13U20": "workshop"}
 
@@ -35,6 +36,15 @@ def load_coa(overrides: dict | None = None) -> dict:
     coa = copy.deepcopy(coa)
     for k, v in (overrides or {}).items():
         coa[k] = v
+    # Codes typed without quotes arrive as numbers; every code must be text to match the ledger.
+    for k in ("assessment_accounts", "contra_accounts", "carryforward_accounts", "earned_revenue_accounts"):
+        coa[k] = [norm_code(c) for c in coa.get(k, [])]
+    coa["external_sales_account"] = norm_code(coa.get("external_sales_account", ""))
+    for grp in ("revenue_groups", "expense_groups"):
+        for g in coa.get(grp, []):
+            for f in ("accounts", "prefixes"):
+                if f in g:
+                    g[f] = [norm_code(c) for c in g[f]]
     return coa
 
 
@@ -81,7 +91,7 @@ project: "{project}"              # recharge project number (optional)
 funds:
 {funds}
 # Account-code prefixes that are personnel (removed in the staff edition)
-personnel_prefixes: ["500", "501", "505", "506", "508"]
+personnel_prefixes: ["50"]
 
 brand: {{primary: "#022851", accent: "#FFBF00"}}
 

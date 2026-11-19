@@ -14,11 +14,17 @@ SKIP_NAMES = {"affiliations.csv"}
 def build_zip(repo: Path, out: Path) -> Path:
     repo, out = Path(repo), Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    import subprocess
+    # Only files git tracks: a real-data folder dropped into the working tree can never be packaged.
+    tracked = set(subprocess.run(["git", "-C", str(repo), "ls-files"], capture_output=True, text=True,
+                                 check=True).stdout.splitlines())
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for item in INCLUDE:
             p = repo / item
             files = [p] if p.is_file() else sorted(f for f in p.rglob("*") if f.is_file())
             for f in files:
+                if f.relative_to(repo).as_posix() not in tracked:
+                    continue
                 rel = f.relative_to(repo)
                 if SKIP_PARTS & set(rel.parts) or f.name in SKIP_NAMES or f.suffix == ".pyc":
                     continue
