@@ -125,6 +125,39 @@ python run.py combine a/benchmark.csv b/benchmark.csv --out comparison
 
 Comparisons use the most recent fiscal year that every core has complete.
 
+### 9. Publications (optional, online)
+
+Finds papers by the core's customers that may use the core's data and checks whether each
+names the core. **This is the only step that goes online**: it sends PI and submitter names
+to Europe PMC (which holds all of PubMed plus open-access and NIH full text). Ask before
+running it. Never run it as part of `build`.
+
+First fill in `publications:` in `core-config.yaml` with the user:
+- `core_names`: every name the core has gone by, plus staff surnames people thank.
+- `technique_terms`: words a methods section uses when the service was used
+  (`"mass spectrometry"`, `"proteom*"`; `"confocal"`, `"light-sheet"`).
+
+```
+python run.py publications <folder>             # every lab; 15-30 minutes, cached
+python run.py publications <folder> --limit 20  # quick test on the 20 most recent labs
+```
+
+Writes `out/internal/publications.xlsx`:
+- **Core not named**: full text checked, none of the names found.
+- **Can't check**: only the abstract is free. Someone must read the paper.
+- **Names the core**: for annual and RCCI reports.
+- **Follow up**: labs with recent orders and no paper yet.
+
+When you report back, say "core not named", never "did not acknowledge": the lab may have
+used another facility for that paper. Read a flagged paper's methods before anyone writes
+to the lab. The workbook has lab and person names: internal only.
+
+How a paper qualifies: the PI, or someone from the lab who submitted samples, is an author,
+because submitters are often first author and the PI may not be. The author must be at the
+institution, or the PI and a submitter must both be authors; this drops same-name researchers
+elsewhere. The paper must be published between the lab's first order and 3 years after its
+last, must not be a review, and must mention a technique term in its methods, abstract or title.
+
 ## Rules
 
 These come from mistakes made, or nearly made, in the Proteomics Core's own reports.
@@ -169,7 +202,8 @@ How each is calculated: [calculations](reference/calculations.md).
 
 Upload the skill zip once. In a chat, the user uploads their exports; put them in one
 folder in the sandbox and run the same commands. Return `out/dashboard.html` and the
-figures as downloadable files. Everything else is the same.
+figures as downloadable files. Everything else is the same. `publications` needs internet
+access from the sandbox; if it has none, say so and offer to run it in Claude Code.
 
 ## Sample data
 

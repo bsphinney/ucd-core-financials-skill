@@ -29,6 +29,7 @@ class Config:
     rcci_window: tuple | None = None
     assessment_note: str | None = None
     coa: dict = field(default_factory=dict)
+    publications: dict = field(default_factory=dict)
 
 
 def load_coa(overrides: dict | None = None) -> dict:
@@ -52,6 +53,11 @@ def _as_date(v):
     if v is None or isinstance(v, date):
         return v
     return date.fromisoformat(str(v))
+
+
+def _pub_settings(raw, name):
+    from .publications import settings
+    return settings(raw, name)
 
 
 def load_config(path) -> Config:
@@ -78,6 +84,7 @@ def load_config(path) -> Config:
         rcci_window=window,
         assessment_note=raw.get("assessment_note"),
         coa=load_coa(raw.get("coa_overrides")),
+        publications=_pub_settings(raw.get("publications"), name),
     )
 
 
@@ -103,6 +110,15 @@ assessment_note: null
 
 # Optional: override campus-wide defaults from reference/ucd-chart-of-accounts.yaml
 coa_overrides: {{}}
+
+# For `run.py publications` (goes online: sends author names to Europe PMC). Every name the core has
+# gone by, and words that appear in a methods section when the core's service was used.
+publications:
+  core_names: ["{core_name}"]
+  technique_terms: []     # e.g. ["mass spectrometry", "proteom*", "LC-MS/MS"] or ["confocal", "light-sheet"]
+  institution: "Davis"
+  years_after: 3          # how long after a lab's last order a paper still counts
+  follow_up_years: 3      # labs with orders this recent and no paper yet are listed to follow up
 """
 
 

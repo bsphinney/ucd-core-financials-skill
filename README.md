@@ -9,6 +9,8 @@ and how, then turns those exports into:
 - **shareable figures** with no dollar amounts or names, ready for Cores Connect or campus
   meetings;
 - **RCCI usership tables** (Tables 1 and 2) as an Excel workbook;
+- a **publications check**: customers' papers that may use the core's data, which ones
+  name the core, and labs to follow up with;
 - an **unbilled-order check**, a **year-end forecast**, a **one-page summary** built only
   from checked numbers, and a **benchmark file** for comparing cores.
 
@@ -42,6 +44,7 @@ python run.py init      my_core/   # writes core-config.yaml
 python run.py inventory my_core/   # what's here, what's missing
 python run.py affiliations my_core/ # guess customer types into affiliations.csv
 python run.py build     my_core/   # everything into my_core/out/
+python run.py publications my_core/ # customers' papers: does each name the core? (online)
 python run.py combine   a/out/benchmark.csv b/out/benchmark.csv --out comparison/
 ```
 
@@ -63,10 +66,11 @@ python run.py build sample_data/example_core
 
 ## Privacy
 
-- Everything runs locally on files you export. Nothing is sent anywhere.
+- Everything runs locally on files you export. The one exception is `run.py publications`,
+  which sends PI and submitter names to Europe PMC's public search. `build` never does.
 - `out/share/` and `benchmark.csv` contain percentages, ratios, counts and days only:
   no dollar amounts, no lab, PI or person names.
-- `dashboard.html`, `out/internal/`, `usership.xlsx` and `facts.json` contain dollar
+- `dashboard.html`, `out/internal/` (including `publications.xlsx`), `usership.xlsx` and `facts.json` contain dollar
   amounts and lab names. Keep them inside the core and its finance staff.
 - The staff edition removes individual salary and benefit accounts.
 - GLIDE cardholder and traveller names are never read.

@@ -44,3 +44,15 @@ coa_overrides:
 Groups are matched in order and the first match wins: exact `accounts` first, then
 `prefixes`. Keep one `catch_all` group last. If you rename groups, update
 `per_dollar_buckets` to match.
+
+## publications
+
+Used only by `run.py publications`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `core_names` | `[core_name]` | Every name the core has gone by, and staff surnames people thank. A paper "names the core" if any appears in its record or full text. |
+| `technique_terms` | none (required) | Words a methods section uses when your service was used. `*` is a wildcard: `"proteom*"`. |
+| `institution` | `"Davis"` | The matched author's affiliation must contain this, unless the PI and a submitter are both authors. |
+| `years_after` | `3` | How long after a lab's last order a paper still counts. |
+| `follow_up_years` | `3` | Labs with orders this recent and no paper since are listed to follow up. |

@@ -351,6 +351,10 @@ brand: {primary: "#022851", accent: "#FFBF00"}
 rcci_window: {start: "2023-07-01", end: "2026-03-31"}
 assessment_note: null
 coa_overrides: {}
+
+publications:
+  core_names: ["Example Imaging Core", "Imaging Core Facility"]
+  technique_terms: ["confocal", "light-sheet", "super-resolution microscopy"]
 """
 
 

@@ -6,7 +6,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-COMMANDS = ["init", "inventory", "affiliations", "build", "combine"]
+COMMANDS = ["init", "inventory", "affiliations", "build", "publications", "combine"]
 
 
 def _init(folder: Path) -> int:
@@ -113,6 +113,50 @@ def _build(folder: Path) -> int:
     return 0
 
 
+def _publications(folder: Path, limit=None) -> int:
+    from . import publications as P
+    from .config import load_config
+    from .inventory import scan
+    from .ppms import load_orders
+    files = [Path(r["path"]) for r in scan(folder) if r["kind"] == "ppms_orders"]
+    if not files:
+        print("No PPMS Order details report found. It holds the lab and submitter names to search.")
+        return 2
+    s = load_config(folder / "core-config.yaml").publications
+    if not s["technique_terms"]:
+        print("Add technique_terms under publications: in core-config.yaml first: words a methods section "
+              "uses when your service was used (e.g. \"mass spectrometry\", \"confocal\").")
+        return 2
+    orders = load_orders(files)
+    if limit:
+        keep = orders[orders["is_revenue"]].groupby("group")["ordered"].max().nlargest(limit).index
+        orders = orders[orders["group"].isin(keep)]
+    out = folder / "out" / "internal"
+    client = P.EuropePMC(out / "publications_cache.json")
+    print("Searching Europe PMC (includes all of PubMed). Author names are sent to europepmc.org.")
+
+    def progress(i, n, person):
+        if i % 50 == 0:
+            print(f"  {i}/{n} people searched", flush=True)
+    try:
+        rows = P.find_papers(orders, s, client, progress)
+    finally:
+        if hasattr(client, "save"):
+            client.save()
+    fu = P.follow_up(orders, rows, s)
+    path = out / "publications.xlsx"
+    P.write_workbook(rows, fu, s, path)
+    n = {st: sum(r["status"] == st for r in rows) for st in (P.NAMED, P.NOT_NAMED, P.CANT_CHECK)}
+    checkable = n[P.NAMED] + n[P.NOT_NAMED]
+    print(f"\n{len(rows)} papers may use the core's data:")
+    print(f"  {n[P.NAMED]} name the core, {n[P.NOT_NAMED]} don't, {n[P.CANT_CHECK]} can't be checked (no free full text)")
+    if checkable:
+        print(f"  Of the papers that could be checked, {n[P.NAMED] / checkable:.0%} name the core.")
+    print(f"  Follow up: {len(fu)} labs with recent orders and no paper yet.")
+    print(f"\nWrote {path} (internal: lab names).")
+    return 0
+
+
 def _combine(paths, out: Path) -> int:
     from .benchmark import combine_benchmarks
     out.mkdir(parents=True, exist_ok=True)
@@ -132,6 +176,9 @@ def main(argv=None) -> int:
                         ("build", "build every output into <folder>/out")]:
         p = sub.add_parser(name, help=help_)
         p.add_argument("folder", type=Path)
+    pp = sub.add_parser("publications", help="find customers' papers and check they name the core (online)")
+    pp.add_argument("folder", type=Path)
+    pp.add_argument("--limit", type=int, help="only the N labs with the most recent orders (for a quick test)")
     c = sub.add_parser("combine", help="compare several cores' benchmark.csv files")
     c.add_argument("files", nargs="+", type=Path)
     c.add_argument("--out", type=Path, default=Path("benchmark_comparison"))
@@ -142,6 +189,8 @@ def main(argv=None) -> int:
     if not folder.is_dir():
         print(f"ERROR: {folder} is not a folder")
         return 2
+    if args.cmd == "publications":
+        return _publications(folder, args.limit)
     return {"init": _init, "inventory": _inventory, "affiliations": _affiliations, "build": _build}[args.cmd](folder)
 
 
