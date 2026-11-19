@@ -361,17 +361,20 @@ def _bridge(fin, save):
     fig, ax = _fig(8.5, 4.8)
     fig.subplots_adjust(bottom=0.32)
     run = 0.0
+    lo, hi = 0.0, 0.0
     for i, s in enumerate(steps):
         total_bar = i == 0 or s["step"].startswith("=")
         base = 0.0 if total_bar else run
         color = INK2 if total_bar else (SURPLUS if s["amount"] >= 0 else DEFICIT)
         ax.bar(i, s["amount"], bottom=base, color=color, width=0.6)
         top = max(base, base + s["amount"])
+        lo, hi = min(lo, base, base + s["amount"]), max(hi, top)
         ax.text(i, top, f"{s['amount'] / 1000:,.0f}k", ha="center", va="bottom", fontsize=8, color=INK)
         run = s["amount"] if total_bar else run + s["amount"]
     ax.set_xticks(range(len(steps)), [s["step"] for s in steps], rotation=25, ha="right", fontsize=8.5)
     ax.yaxis.set_major_formatter(money)
-    ax.margins(y=0.12)
+    pad = (hi - lo) * 0.12 or 1.0
+    ax.set_ylim(lo - (pad if lo < 0 else 0), hi + pad)  # room for the value labels above each bar
     ax.axhline(0, color=INK2, lw=0.8)
     ax.set_title(f"What moved the balance in FY{b['fy']}")
     save(fig, "bridge", "internal", "GL Transaction Listing + Department P&L")

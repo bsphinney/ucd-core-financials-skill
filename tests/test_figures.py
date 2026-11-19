@@ -55,3 +55,20 @@ def test_stale_figures_from_earlier_run_are_removed(sample, tmp_path):
     assert "turnaround" not in out
     assert not (tmp_path / "share" / "turnaround.png").exists()
     assert (tmp_path / "share" / "notes.txt").exists()
+
+
+def test_bridge_leaves_room_above_tallest_bar(sample, tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+    from core_financials import figures
+    seen = {}
+    real = plt.Figure.savefig
+
+    def spy(self, *a, **k):
+        for ax in self.axes:
+            if "What moved" in ax.get_title("left") + ax.get_title():
+                tops = [r.get_y() + r.get_height() for r in ax.patches]
+                seen["ok"] = ax.get_ylim()[1] > max(tops) * 1.05
+        return real(self, *a, **k)
+    monkeypatch.setattr(plt.Figure, "savefig", spy)
+    figures.render_figures(sample["fin"], None, sample["cfg"], tmp_path)
+    assert seen["ok"]
