@@ -133,3 +133,31 @@ def order_row(order, group, price, ordered, accepted="same", completed="same", f
 
 def write_orders(path, rows):
     return write_sheet(path, ORDER_COLS, rows, sheet="Order details report")
+
+
+SAMPLE = Path(__file__).resolve().parents[1] / "sample_data" / "example_core"
+
+
+@pytest.fixture(scope="session")
+def sample():
+    """Everything computed from the committed sample core."""
+    from core_financials import aggie, finance, usership
+    from core_financials.gl import classify, load_gl
+    from core_financials.ppms import load_orders
+    from core_financials.affiliation import guess
+    from core_financials.ppms import group_key
+
+    c = load_config(SAMPLE / "core-config.yaml")
+    files = sorted(SAMPLE.glob("*.xlsx"))
+    gl = classify(load_gl(files, c), c)
+    orders = load_orders(files)
+    aff = {}
+    for key, sub in orders.groupby("group_key"):
+        a, conf, _ = guess(sub["fin_account"].iloc[0], c.coa)
+        aff[key] = {"affiliation": a, "college": "CBS" if a == "UC Davis" else "", "department": ""}
+    po = aggie.load_po(files, c)
+    balances = aggie.load_balances(SAMPLE / "pnl_fy2026.xlsx")
+    fin = finance.compute_finance(gl, c, balances_beginning=-aggie.balances_total(balances)["beginning"])
+    use = usership.compute_usership(orders, aff)
+    return {"cfg": c, "gl": gl, "orders": orders, "aff": aff, "po": po, "balances": balances,
+            "glide": aggie.load_glide(files), "fin": fin, "use": use, "files": files}

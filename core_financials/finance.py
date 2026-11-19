@@ -273,6 +273,7 @@ def compute_finance(gl, cfg, balances_beginning: float | None) -> dict:
     rev, exp, ded = revenue_groups(gl, cfg), expense_groups(gl, cfg), deductions(gl, cfg)
     latest_complete = complete[-1] if complete else None
     return {
+        "core_node": cfg.short_name,
         "kpis": kpis(gl),
         "revenue_groups": rev,
         "expense_groups": exp,
