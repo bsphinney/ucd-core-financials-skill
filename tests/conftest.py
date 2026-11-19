@@ -94,3 +94,23 @@ def small_gl(cfg):
     rows += [("12100", "445100", "2025-01-12", 40), ("12100", "770006", "2025-02-12", 25),
              ("12100", "300001", "2024-07-01", -5000)]
     return make_gl(rows, cfg)
+
+
+PO_COLS = ['Purchase Order', 'Purchase Order Description', 'PO Status', 'Buyer', 'PO Creation Date', 'PO End Date',
+           'Supplier Number', 'Supplier Name', 'Purchase Category', 'Item Description', 'PO Amount',
+           'PO Line Number', 'PO Line Distribution Amount', 'Charge Entity', 'Charge Fund',
+           'Charge Financial Department', 'Charge Account', 'Charge Purpose', 'Charge Program', 'Charge Project']
+PO_PREAMBLE = [["UCD Comprehensive Spend Report"], [], ["Report Run Date", "2026-04-02"], [],
+               ["Procurement BU"], ["PO Number", "All"], ["PO Amount Range From"], ["Charge Entity"],
+               ["Charge Program"], ["Project Expenditure Type"], []]
+PNL_COLS = ['Financial Department', 'Fund', 'Project Description', 'Sum of 3XXXXX-Beginning Balance',
+            'Sum of 4XXXXX-All Revenue', 'Sum of 5XXXXX-All Expenses', 'Sum of Ending Balance (3X + 4X + 5X + 8X)']
+GLIDE_COLS = ['Report Type', 'Journal Source', 'Accounting Date', 'GL Fund', 'GL Financial Department',
+              'GL Natural Account', 'GL Natural Account Name', 'PPM Comment', 'Debit Amount', 'Credit Amount',
+              'Description', 'udfString1', 'udfString2']
+
+
+def po_row(supplier, account, fund, amount, created="03-15-2025", item="widget"):
+    return {"Supplier Name": supplier, "Charge Account": f"{account} - Acct name",
+            "Charge Fund": f"{fund} - Fund name", "PO Line Distribution Amount": amount,
+            "PO Creation Date": created, "Item Description": item, "Purchase Order": "1000"}
