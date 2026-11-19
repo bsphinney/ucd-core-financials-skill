@@ -114,3 +114,22 @@ def po_row(supplier, account, fund, amount, created="03-15-2025", item="widget")
     return {"Supplier Name": supplier, "Charge Account": f"{account} - Acct name",
             "Charge Fund": f"{fund} - Fund name", "PO Line Distribution Amount": amount,
             "PO Creation Date": created, "Item Description": item, "Purchase Order": "1000"}
+
+
+ORDER_COLS = ['Order Number', 'User', 'Group', 'Fin Account', 'Service Name', 'Service Group', 'Project Name',
+              'Unit price', 'Quantity ordered', 'Price', 'Invoiced - Y/N,', 'Date Ordered', 'Date Accepted',
+              'Date Completed', 'Assigned to', 'Additional Info-attached manifest']
+
+
+def order_row(order, group, price, ordered, accepted="same", completed="same", fin="EXTERNAL - a@ucla.edu",
+              service="Service A", invoiced="Y", user="U One", sgroup=""):
+    accepted = ordered if accepted == "same" else accepted
+    completed = accepted if completed == "same" else completed
+    return {"Order Number": str(order), "User": user, "Group": group, "Fin Account": fin, "Service Name": service,
+            "Service Group": sgroup, "Unit price": price, "Quantity ordered": 1, "Price": price,
+            "Invoiced - Y/N,": invoiced, "Date Ordered": ordered, "Date Accepted": accepted,
+            "Date Completed": completed, "Assigned to": "Staff"}
+
+
+def write_orders(path, rows):
+    return write_sheet(path, ORDER_COLS, rows, sheet="Order details report")
