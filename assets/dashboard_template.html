@@ -142,6 +142,10 @@ function accountModal(acct){
     const r=(A.po_vs_gl||[]).find(x=>x.account===acct);
     if(r)h+=`<p class="note">PO-committed total ${usd(r.po_committed)} vs GL posted actual ${usd(r.gl_posted)}. PO amounts are what was ordered; multi-year service contracts are ordered up front, so they can run well above what has posted.</p>`;
   }
+  if(d.subledger&&d.subledger.length){
+    const bySup={};d.subledger.forEach(l=>{bySup[l.supplier||"(no supplier)"]=(bySup[l.supplier||"(no supplier)"]||0)+l.amount;});
+    h+=`<h4>Invoice lines with supplier (from the GL and Subledger Detail export, ${d.subledger.length} lines)</h4><p class="note">Covers only the months that export was pulled for; the totals above come from the standard ledger.</p><table>`+Object.entries(bySup).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([s,v])=>`<tr><td>${esc(s)}</td><td class="num">${usd(v)}</td></tr>`).join("")+"</table>";
+  }
   h+=`<h4>Transactions (${d.transactions.length})</h4><input class="filter" id="txf" placeholder="Filter by text, supplier, journal, date…"><div id="txt"></div>`;
   openModal(acct+" — "+d.desc,h,()=>{
     const render=q=>{q=(q||"").toLowerCase();const rows=d.transactions.filter(t=>!q||JSON.stringify(t).toLowerCase().includes(q));

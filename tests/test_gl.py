@@ -1,5 +1,5 @@
 from conftest import PAGE_COLS, WIDE_COLS, page_row, wide_row, write_sheet
-from core_financials.gl import classify, load_gl
+from core_financials.gl import classify, load_gl, load_subledger
 from core_financials.io_util import norm_code
 
 PREAMBLE = [["UCD Transaction Listing Report - GL and Subledger Detail"]] + [[f"Param {i}"] for i in range(27)]
@@ -40,8 +40,22 @@ def test_page_and_wide_overlap_keeps_supplier(tmp_path, cfg):
                     [wide_row("12100", "522400", "2025-03-04", 42.5, supplier="ACME LAB SUPPLY", jname="JX")],
                     sheet="Sheet1", preamble=PREAMBLE)
     gl = load_gl([a, b], cfg)
-    assert len(gl) == 1
-    assert gl.iloc[0]["supplier"] == "ACME LAB SUPPLY"
+    assert len(gl) == 1 and gl.iloc[0]["layout"] == "page"
+    sub = load_subledger([a, b], cfg)
+    assert list(sub["supplier"]) == ["ACME LAB SUPPLY"]
+
+
+def test_page_summary_rows_not_double_counted_with_wide_lines(tmp_path, cfg):
+    """Real exports: the standard listing has one row per journal, the wide one has its individual lines."""
+    a = write_sheet(tmp_path / "a.xlsx", PAGE_COLS, [page_row("12100", "522400", "2024-01-03", 4075.50, jname="JX")])
+    b = write_sheet(tmp_path / "b.xlsx", WIDE_COLS,
+                    [wide_row("12100", "522400", "2024-01-03", v, supplier="ACME", jname="JX")
+                     for v in (551.00, 3800.00, -275.50)] +
+                    [wide_row("12100", "522400", "2023-09-03", 999.0, supplier="ACME", jname="JOLD")],
+                    sheet="Sheet1", preamble=PREAMBLE)
+    gl = load_gl([a, b], cfg)
+    assert gl["amount"].sum() == 4075.50
+    assert load_subledger([a, b], cfg)["amount"].sum() == 4075.50 + 999.0
 
 
 def test_funds_filtered_to_config(tmp_path, cfg):

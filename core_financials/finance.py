@@ -256,17 +256,22 @@ def top_accounts(gl, role: str, n: int = 15) -> list:
             for r in accts.itertuples()]
 
 
-def account_detail(gl, account: str) -> dict:
+def account_detail(gl, account: str, subledger=None) -> dict:
     sub = gl[gl["account"] == account]
     sign = 1 if (sub["role"] == "expense").any() or (sub["role"] == "assessment").any() else -1
     tx = [{"date": r.date.strftime("%Y-%m-%d"), "period": r.period, "fund": r.fund,
            "category": r.journal_category, "journal": r.journal_name, "amount": float(r.amount),
            "supplier": r.supplier, "line": r.line_desc} for r in sub.itertuples()]
+    lines = []
+    if subledger is not None and len(subledger):
+        sl = subledger[subledger["account"] == account]
+        lines = [{"date": r.date.strftime("%Y-%m-%d"), "supplier": r.supplier, "line": r.line_desc,
+                  "amount": float(r.amount)} for r in sl.itertuples()]
     return {"desc": sub["account_desc"].iloc[0] if len(sub) else "", "by_fy": _by_fy(sub, sign),
-            "transactions": tx}
+            "transactions": tx, "subledger": lines}
 
 
-def compute_finance(gl, cfg, balances_beginning: float | None) -> dict:
+def compute_finance(gl, cfg, balances_beginning: float | None, subledger=None) -> dict:
     op = _op(gl)
     fys = sorted(int(f) for f in op["fy"].unique()) if len(op) else []
     complete = complete_fys(op["date"]) if len(op) else []
@@ -294,7 +299,7 @@ def compute_finance(gl, cfg, balances_beginning: float | None) -> dict:
         "forecast": forecast(gl, cfg),
         "top_revenue": top_accounts(gl, "income"),
         "top_expense": top_accounts(gl, "expense"),
-        "account_details": {a: account_detail(gl, a) for a in sorted(op["account"].unique())},
+        "account_details": {a: account_detail(gl, a, subledger) for a in sorted(op["account"].unique())},
         "complete_fys": complete,
         "all_fys": fys,
         "gross_total": sum(g["amount"] for g in rev),

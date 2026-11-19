@@ -110,3 +110,13 @@ def test_compute_finance_keys(small_gl, cfg):
               "complete_fys", "all_fys", "gross_total", "deductions_total", "contra_total"]:
         assert k in out, k
     assert out["complete_fys"] == [2025]
+
+
+def test_account_detail_includes_subledger_lines(small_gl, cfg):
+    import pandas as pd
+    sub = pd.DataFrame([{"account": "522400", "date": pd.Timestamp("2025-01-10"), "supplier": "ACME",
+                         "line_desc": "tips", "amount": 120.0, "fund": "12100"}])
+    out = F.compute_finance(small_gl, cfg, balances_beginning=None, subledger=sub)
+    lines = out["account_details"]["522400"]["subledger"]
+    assert lines == [{"date": "2025-01-10", "supplier": "ACME", "line": "tips", "amount": 120.0}]
+    assert out["account_details"]["500100"]["subledger"] == []

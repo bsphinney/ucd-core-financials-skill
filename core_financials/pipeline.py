@@ -10,7 +10,7 @@ from .checks import run_checks, write_checks_md
 from .config import load_config
 from .dashboard import build_dashboard_data, write_dashboard
 from .figures import render_figures
-from .gl import classify, load_gl
+from .gl import classify, load_gl, load_subledger
 from .inventory import reports_needed_md, scan
 from .ppms import load_orders
 
@@ -45,7 +45,8 @@ def run_build(folder, out=None) -> dict:
     for p in by_kind.get("pnl_balances", []):
         balances += aggie.load_balances(p)
     beginning = -aggie.balances_total(balances)["beginning"] if balances else None
-    fin = finance.compute_finance(gl, cfg, beginning) if gl is not None else None
+    sub = load_subledger(gl_files, cfg) if gl_files else None
+    fin = finance.compute_finance(gl, cfg, beginning, subledger=sub) if gl is not None else None
     if fin is None:
         skipped.append({"section": "finance (dashboard money sections, finance figures)",
                         "reason": "no GL Transaction Listing"})

@@ -21,7 +21,6 @@ WIDE_MAP = {"Fund": "fund", "Fund Description": "fund_desc", "Account": "account
             "Supplier/Customer Name": "supplier", "Transaction Line Description": "line_desc"}
 COLUMNS = ["fund", "fund_desc", "account", "account_desc", "journal_category", "journal_name", "period", "date",
            "amount", "supplier", "line_desc", "source_file", "layout"]
-DEDUPE_KEY = ["fund", "account", "date", "amt_c", "journal_name"]
 
 
 def _normalise(df: pd.DataFrame, mapping: dict, layout: str, source: str) -> pd.DataFrame:
@@ -51,7 +50,7 @@ def read_gl_file(path) -> pd.DataFrame | None:
     return None
 
 
-def load_gl(paths, cfg) -> pd.DataFrame:
+def _read_all(paths, cfg) -> pd.DataFrame:
     frames = [f for f in (read_gl_file(p) for p in paths) if f is not None]
     if not frames:
         return pd.DataFrame(columns=COLUMNS)
@@ -61,15 +60,33 @@ def load_gl(paths, cfg) -> pd.DataFrame:
         gl = gl[gl["fund"].isin(set(cfg.funds))]
     # The same rows pulled in two files are counted once, but genuinely repeated lines inside one
     # file are kept: number each repeat within its file, then de-duplicate on (row, repeat number).
-    gl = gl.assign(amt_c=gl["amount"].round(2), _rank=(gl["layout"] != "wide").astype(int))
+    gl = gl.assign(amt_c=gl["amount"].round(2))
     full = [c for c in COLUMNS if c not in ("source_file", "amount")] + ["amt_c"]
     gl["_occ"] = gl.groupby(full + ["source_file"], dropna=False).cumcount()
-    gl = gl.drop_duplicates(subset=full + ["_occ"])
-    # The same transaction in both layouts: keep the wide row (it carries the supplier).
-    gl["_kocc"] = gl.groupby(DEDUPE_KEY + ["layout"], dropna=False).cumcount()
-    gl = gl.sort_values("_rank", kind="stable").drop_duplicates(subset=DEDUPE_KEY + ["_kocc"])
-    gl = gl.drop(columns=["amt_c", "_rank", "_occ", "_kocc"]).sort_values(["date", "account"], kind="stable")
+    gl = gl.drop_duplicates(subset=full + ["_occ"]).drop(columns=["amt_c", "_occ"])
+    return gl.sort_values(["date", "account"], kind="stable").reset_index(drop=True)
+
+
+def load_gl(paths, cfg) -> pd.DataFrame:
+    """The ledger used for every total.
+
+    The standard export carries one summary row per journal; the wide "GL and Subledger Detail"
+    export splits the same journal into its individual invoice lines, and is usually pulled only for
+    a few months. Mixing the two double-counts, so when any standard export is present it is the
+    ledger and wide rows are used only for supplier detail (load_subledger). A core that only has
+    wide exports uses them as the ledger.
+    """
+    gl = _read_all(paths, cfg)
+    if (gl["layout"] == "page").any():
+        gl = gl[gl["layout"] == "page"]
     return gl.reset_index(drop=True)
+
+
+def load_subledger(paths, cfg) -> pd.DataFrame:
+    """Invoice-level lines with supplier names, from the wide export only."""
+    gl = _read_all(paths, cfg)
+    sub = gl[gl["layout"] == "wide"]
+    return sub[["fund", "account", "date", "supplier", "line_desc", "amount"]].reset_index(drop=True)
 
 
 def _match_group(account: str, groups: list) -> str:

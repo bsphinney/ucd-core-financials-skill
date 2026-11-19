@@ -52,7 +52,7 @@ def test_sample_loads(generated):
     for k in ["gl", "po", "glide", "orders"]:
         assert len(d[k]) > 0, k
     assert len(d["balances"]) >= 3
-    assert set(d["gl"]["layout"]) == {"page", "wide"}
+    assert set(d["gl"]["layout"]) == {"page"}
     assert d["gl"]["fy"].min() == 2024 and d["gl"]["fy"].max() == 2027
     assert set(cfg.funds) == {"12100", "16200", "13U00"}
 
