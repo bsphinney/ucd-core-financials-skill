@@ -1,6 +1,6 @@
 ---
 name: ucd-core-financials
-description: Financial and usership reports for UC Davis core facilities that bill through PPMS (Stratocore). Tells the core exactly which Aggie Enterprise and PPMS reports to pull and how, then builds an interactive dashboard, a staff edition, shareable figures, RCCI usership tables, an unbilled-order check, a year-end forecast and a benchmark file. Use when someone mentions UC Davis core facility finances, recharge rates or deficits, PPMS or Stratocore exports, Aggie Enterprise reports, a GL transaction listing, the campus income assessment, RCCI usership tables, Cores Connect, or a core dashboard.
+description: Financial and usership reports for UC Davis core facilities that bill through PPMS (Stratocore). Tells the core exactly which Aggie Enterprise and PPMS reports to pull and how, then builds an interactive dashboard, a staff edition, shareable figures, RCCI usership tables, an unbilled-order check, a year-end forecast, a benchmark file, and a publications check (customers' papers that may use the core's data and whether they name the core). Use when someone mentions UC Davis core facility finances, recharge rates or deficits, PPMS or Stratocore exports, Aggie Enterprise reports, a GL transaction listing, the campus income assessment, RCCI usership tables, Cores Connect, a core dashboard, or papers that should acknowledge the core.
 ---
 
 # UC Davis core facility financials
