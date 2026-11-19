@@ -5,6 +5,8 @@ Carry-forward (class 3) and other classes never enter operating figures.
 """
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 from .fiscal import complete_fys
@@ -87,6 +89,21 @@ def _earned(gl, cfg):
     return float(-gl.loc[gl["account"].isin(cfg.coa["earned_revenue_accounts"]), "amount"].sum())
 
 
+_MONTHS = {m: i for i, m in enumerate(["january", "february", "march", "april", "may", "june", "july", "august",
+                                        "september", "october", "november", "december"], 1)}
+_NAMED = re.compile(r"(january|february|march|april|may|june|july|august|september|october|november|december)"
+                    r"\s+(20\d\d)", re.I)
+
+
+def _service_month(a) -> pd.Series:
+    """The month an assessment is FOR: named in the journal ('... - February 2024'), else the posting month."""
+    def one(name, date):
+        m = _NAMED.search(str(name))
+        return pd.Period(year=int(m.group(2)), month=_MONTHS[m.group(1).lower()], freq="M") if m \
+            else date.to_period("M")
+    return pd.Series([one(n, d) for n, d in zip(a["journal_name"], a["date"])], index=a.index, dtype="period[M]")
+
+
 def assessment(gl, cfg) -> dict:
     coa = cfg.coa
     a = gl[gl["role"] == "assessment"]
@@ -96,10 +113,11 @@ def assessment(gl, cfg) -> dict:
     earned = _earned(gl, cfg)
     ext = gl[gl["account"] == coa["external_sales_account"]]
     ext_income = float(-ext["amount"].sum())
-    month = lambda d: d.dt.to_period("M")  # noqa: E731
-    ext_m = (-ext["amount"]).groupby(month(ext["date"])).sum()
-    a_m = a["amount"].groupby(month(a["date"])).sum()
-    months = [m for m, v in ext_m.items() if abs(v) > 0.005]
+    ext_m = (-ext["amount"]).groupby(ext["date"].dt.to_period("M")).sum()
+    a_m = a["amount"].groupby(_service_month(a)).sum()
+    last = max(a_m.index) if len(a_m) else None
+    months = [m for m, v in ext_m.items() if abs(v) > 0.005 and last is not None and m <= last]
+    unposted = [str(m) for m, v in ext_m.items() if abs(v) > 0.005 and (last is None or m > last)]
     matched = sum(1 for m in months if abs(a_m.get(m, 0.0) - coa["assessment_rate"] * ext_m[m]) <= 0.01)
     return {
         "total": total,
@@ -109,7 +127,8 @@ def assessment(gl, cfg) -> dict:
         "pct_earned": total / earned if earned else None,
         "per_dollar_external": total / ext_income if ext_income else None,
         "rate": coa["assessment_rate"],
-        "match": {"months": len(months), "matched": matched, "rate": matched / len(months) if months else None},
+        "match": {"months": len(months), "matched": matched, "rate": matched / len(months) if months else None,
+                  "not_yet_posted": unposted},
     }
 
 
@@ -230,6 +249,9 @@ def bridge(gl, cfg, fy: int, beginning: float | None) -> list:
     return steps
 
 
+MIN_FORECAST_MONTHS = 3
+
+
 def forecast(gl, cfg) -> dict | None:
     g = _op(gl)
     if g.empty:
@@ -242,6 +264,8 @@ def forecast(gl, cfg) -> dict | None:
     if not prior:
         return None
     seen = set(g.loc[g["fy"] == latest, "date"].dt.month)
+    if len(seen) < MIN_FORECAST_MONTHS:  # one or two (often partial) months say little about the year
+        return None
     net_of = lambda sub: _income(sub) - _expense(sub)  # noqa: E731
     ytd = net_of(g[g["fy"] == latest])
     rest = [net_of(g[(g["fy"] == fy) & ~g["date"].dt.month.isin(seen)]) for fy in prior]

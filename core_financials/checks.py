@@ -47,7 +47,9 @@ def run_checks(fin: dict | None, use: dict | None, po_gl: list | None = None) ->
         if m["months"]:
             rate = fin["assessment"]["rate"]
             out.append(Check(f"assessment matches {rate:.0%} of external sales", True,
-                             f"{m['matched']} of {m['months']} months match to the cent", "info"))
+                             f"{m['matched']} of {m['months']} months match to the cent"
+                             + (f"; not yet charged: {', '.join(m.get('not_yet_posted') or [])}"
+                                if m.get("not_yet_posted") else ""), "info"))
     for row in po_gl or []:
         out.append(Check(f"PO committed vs GL posted, {row['account']}", True,
                          f"PO {_money(row['po_committed'])} vs GL {_money(row['gl_posted'])}", "info"))

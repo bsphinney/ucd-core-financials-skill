@@ -120,3 +120,22 @@ def test_account_detail_includes_subledger_lines(small_gl, cfg):
     lines = out["account_details"]["522400"]["subledger"]
     assert lines == [{"date": "2025-01-10", "supplier": "ACME", "line": "tips", "amount": 120.0}]
     assert out["account_details"]["500100"]["subledger"] == []
+
+
+def test_assessment_match_uses_month_named_in_journal_and_skips_unposted(cfg):
+    """Real AE: February's assessment posts on 31 March, named 'Campus Income Assessment - February 2024'."""
+    from conftest import make_gl
+    gl = make_gl([("12100", "410000", "2024-02-10", -1000), ("12100", "410000", "2024-03-10", -2000),
+                  ("12100", "770009", "2024-03-31", 150), ("12100", "770009", "2024-03-31", 300),
+                  ("12100", "410000", "2024-04-10", -500)], cfg)
+    gl.loc[gl["account"] == "770009", "journal_name"] = ["Campus Income Assessment - February 2024 X",
+                                                         "Campus Income Assessment - March 2024 X"]
+    m = F.assessment(gl, cfg)["match"]
+    assert (m["months"], m["matched"]) == (2, 2)
+    assert m["not_yet_posted"] == ["2024-04"]
+
+
+def test_forecast_needs_three_months(small_gl, cfg):
+    two = small_gl[small_gl["date"] < "2025-09-01"]
+    assert F.forecast(two, cfg) is None
+    assert F.forecast(small_gl, cfg)["months_seen"] == 3
