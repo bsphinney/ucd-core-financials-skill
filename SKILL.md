@@ -138,6 +138,9 @@ running it. Never run it as part of `build`.
 
 First fill in `publications:` in `core-config.yaml` with the user:
 - `core_names`: every name the core has gone by, plus staff surnames people thank.
+- `technique_also` (optional): a second list, one of which must also appear. Use it when
+  the first list is shared with other facilities: a proteomics core pairs mass-spec words
+  with protein words (`"trypsin"`, `"peptide*"`, `"proteomic*"`).
 - `other_facilities`: other facilities offering similar services. A paper naming one of
   them (and not this core) goes to "Names another facility", not the flag list.
 - `technique_terms`: words a methods section uses when the service was used

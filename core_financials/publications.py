@@ -21,7 +21,7 @@ NOT_NAMED = "Core not named"
 CANT_CHECK = "Can't check: no free full text"
 OTHER = "Names another facility"
 API = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-DEFAULTS = {"core_names": [], "other_facilities": [], "technique_terms": [], "institution": "Davis", "years_after": 3, "follow_up_years": 3}
+DEFAULTS = {"core_names": [], "other_facilities": [], "technique_terms": [], "technique_also": [], "institution": "Davis", "years_after": 3, "follow_up_years": 3}
 
 
 def settings(raw: dict | None, core_name: str = "") -> dict:
@@ -29,6 +29,7 @@ def settings(raw: dict | None, core_name: str = "") -> dict:
     s["core_names"] = [str(x) for x in (s["core_names"] or ([core_name] if core_name else []))]
     s["technique_terms"] = [str(x) for x in s["technique_terms"] or []]
     s["other_facilities"] = [str(x) for x in s["other_facilities"] or []]
+    s["technique_also"] = [str(x) for x in s["technique_also"] or []]
     return s
 
 
@@ -87,9 +88,15 @@ def _base(last, first, start, end):
     return f'AUTH:"{au}" AND FIRST_PDATE:[{start:%Y-%m-%d} TO {end:%Y-%m-%d}]'
 
 
+def _any(terms):
+    return " OR ".join(_term(f, t) for t in terms for f in ("METHODS", "ABSTRACT", "TITLE"))
+
+
 def technique_query(last, first, start, end, s) -> str:
-    terms = " OR ".join(_term(f, t) for t in s["technique_terms"] for f in ("METHODS", "ABSTRACT", "TITLE"))
-    return f"{_base(last, first, start, end)} AND ({terms})"
+    q = f"{_base(last, first, start, end)} AND ({_any(s['technique_terms'])})"
+    if s.get("technique_also"):
+        q += f" AND ({_any(s['technique_also'])})"
+    return q
 
 
 def named_query(last, first, start, end, s, key="core_names") -> str:
@@ -108,11 +115,19 @@ def _affs(a):
         "authorAffiliation", []))
 
 
+def _given(name):
+    return re.sub(r"[^a-z]", "", (str(name).split() or [""])[0].casefold())
+
+
 def _is(a, last, first):
     if (a.get("lastName") or "").casefold() != last.casefold():
         return False
-    given = (a.get("firstName") or a.get("initials") or "")
-    return not first or given[:1].casefold() == first[:1].casefold()
+    if not first:
+        return True
+    full, mine = _given(a.get("firstName") or ""), _given(first)
+    if len(full) > 1 and len(mine) > 1:  # both full names: one must start with the other (Chris/Christopher)
+        return full.startswith(mine) or mine.startswith(full)
+    return (a.get("firstName") or a.get("initials") or "")[:1].casefold() == first[:1].casefold()
 
 
 def _is_review(p):

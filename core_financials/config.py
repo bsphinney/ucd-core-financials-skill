@@ -123,6 +123,7 @@ publications:
   core_names: ["{core_name}"]   # add old names and the surnames of staff people thank
   other_facilities: []    # facilities offering similar services, e.g. ["West Coast Metabolomics Center"]
   technique_terms: []     # e.g. ["mass spectrometry", "proteom*", "LC-MS/MS"] or ["confocal", "light-sheet"]
+  technique_also: []      # optional: one of these must also appear, e.g. ["trypsin", "peptide*"]
   institution: "Davis"
   years_after: 3          # how long after a lab's last order a paper still counts
   follow_up_years: 3      # labs with orders this recent and no paper yet are listed to follow up

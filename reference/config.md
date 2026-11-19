@@ -55,6 +55,7 @@ Used only by `run.py publications`.
 | `core_names` | `[core_name]` | Every name the core has gone by, and staff surnames people thank. A paper "names the core" if any appears in its record or full text. |
 | `other_facilities` | `[]` | Facilities offering similar services. A paper naming one of them and not this core is listed under "Names another facility" instead of being flagged. |
 | `technique_terms` | none (required) | Words a methods section uses when your service was used. `*` is a wildcard: `"proteom*"`. |
+| `technique_also` | `[]` | Optional second list: a paper must also mention one of these. Separates, for example, proteomics (`["trypsin", "tryptic", "peptide*", "proteomic*"]`) from metabolomics when both use "mass spectrometry". |
 | `institution` | `"Davis"` | The matched author's affiliation must contain this, unless the PI and a submitter are both authors. |
 | `years_after` | `3` | How long after a lab's last order a paper still counts. |
 | `follow_up_years` | `3` | Labs with orders this recent and no paper since are listed to follow up. |

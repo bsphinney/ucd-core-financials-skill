@@ -180,3 +180,17 @@ def test_find_papers_prefetches_all_queries_in_two_batches():
     c = Batching(technique={"Lindqvist M": [paper], "Okafor G": [paper]})
     P.find_papers(ORDERS, CFG, c)
     assert c.batches == [3, 4]   # 3 people; then named + other queries for the 2 people with papers
+
+
+def test_full_first_name_must_agree_when_given():
+    other = _paper("30", [_author("Lindqvist", "Mats", "UC Davis"), _author("Okafor", "Gordon", "UC Davis")])
+    assert P.find_papers(ORDERS, CFG, FakeClient(technique={"Lindqvist M": [other], "Okafor G": [other]})) == []
+    initials_only = _paper("31", [{"lastName": "Okafor", "initials": "G", "authorAffiliationDetailsList": {
+        "authorAffiliation": [{"affiliation": "UC Davis"}]}}])
+    assert len(P.find_papers(ORDERS, CFG, FakeClient(technique={"Okafor G": [initials_only]}))) == 1
+
+
+def test_technique_also_terms_are_required_together():
+    s = {**CFG, "technique_also": ["trypsin", "peptide*"]}
+    q = P.technique_query("Okafor", "Grace", datetime(2025, 6, 10).date(), datetime(2028, 6, 10).date(), s)
+    assert q.count(" AND (") == 2 and "METHODS:trypsin" in q
