@@ -218,7 +218,7 @@ def find_papers(orders: pd.DataFrame, s: dict, client, progress=None, failed=Non
                 "title": re.sub(r"<[^>]+>", "", paper.get("title", "")),
                 "journal": ((paper.get("journalInfo") or {}).get("journal") or {}).get("title", "")
                 or ("Preprint" if src == "PPR" else ""),
-                "pmid": paper.get("pmid") or "", "pmcid": paper.get("pmcid") or "",
+                "pmid": paper.get("pmid") or "", "pmcid": paper.get("pmcid") or "", "doi": paper.get("doi") or "",
                 "link": f"https://europepmc.org/article/{src}/{pid}", "status": status,
                 "lab_orders": f"{g['ordered'].min():%Y-%m-%d} → {g['ordered'].max():%Y-%m-%d}",
                 "preprint": src == "PPR"}
@@ -245,6 +245,49 @@ def follow_up(orders: pd.DataFrame, rows: list[dict], s: dict, as_of=None) -> pd
     return pd.DataFrame(out, columns=cols).sort_values("last_order", ascending=False).reset_index(drop=True)
 
 
+# ---------- full-text review ----------
+
+REVIEW_STATUSES = (NOT_NAMED, OTHER, CANT_CHECK)
+REVIEW_COLS = {"verdict": "Review", "confidence": "Confidence", "where": "Where the work was done",
+               "evidence": "Evidence", "action": "Action"}
+
+
+def row_key(r: dict) -> str:
+    """One key per paper, shared by every lab it was found under."""
+    return str(r.get("pmid") or r.get("pmcid") or re.sub(r"\W+", " ", str(r.get("title", ""))).strip().casefold())
+
+
+def review_records(rows: list[dict]) -> list[dict]:
+    """Papers to read in full: flagged, naming another facility, or not checkable. One record per paper."""
+    recs = {}
+    for r in rows:
+        if r["status"] not in REVIEW_STATUSES:
+            continue
+        k = row_key(r)
+        if k in recs:
+            if r["group"] not in recs[k]["lab"]:
+                recs[k]["lab"] += f"; {r['group']}"
+            continue
+        recs[k] = {"key": k, "lab": r["group"], "matched": r["matched"], "date": r["date"], "title": r["title"],
+                   "journal": r["journal"], "pmid": r.get("pmid", ""), "pmcid": r.get("pmcid", ""),
+                   "doi": r.get("doi", ""), "lab_orders": r["lab_orders"], "status": r["status"]}
+    out = list(recs.values())
+    for i, r in enumerate(out, 1):
+        r["n"] = i
+    return out
+
+
+def load_review(folder) -> dict:
+    """Verdicts keyed by paper, from paper_review/index.json and the reviewers' verdict*.json files."""
+    from .fulltext import load_verdicts
+    folder = Path(folder)
+    idx = folder / "index.json"
+    if not idx.exists():
+        return {}
+    keys = {int(k): v for k, v in json.loads(idx.read_text()).items()}
+    return {keys[n]: v for n, v in load_verdicts(folder).items() if n in keys}
+
+
 # ---------- output ----------
 
 COLS = {"group": "Lab (PPMS group)", "matched": "Matched author", "date": "Published", "title": "Title",
@@ -252,8 +295,14 @@ COLS = {"group": "Lab (PPMS group)", "matched": "Matched author", "date": "Publi
         "lab_orders": "Lab's orders"}
 
 
-def write_workbook(rows, fu: pd.DataFrame, s: dict, path) -> None:
+def write_workbook(rows, fu: pd.DataFrame, s: dict, path, verdicts: dict | None = None) -> None:
     df = pd.DataFrame(rows, columns=list(COLS) + ["preprint"])
+    cols = dict(COLS)
+    if verdicts:
+        keys = [row_key(r) for r in rows]
+        for k in REVIEW_COLS:
+            df[k] = [str((verdicts.get(key) or {}).get(k, "")) for key in keys]
+        cols.update(REVIEW_COLS)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     about = pd.DataFrame({"": [
@@ -274,9 +323,12 @@ def write_workbook(rows, fu: pd.DataFrame, s: dict, path) -> None:
         "keep inside the core.",
         f"Built {date.today():%Y-%m-%d}."]})
     with pd.ExcelWriter(path, engine="openpyxl") as xw:
+        if verdicts:
+            ask = df[df["action"].str.startswith("Ask")].drop_duplicates("title")
+            ask[list(cols)].rename(columns=cols).to_excel(xw, sheet_name="Ask the lab", index=False)
         for sheet, st in [("Core not named", NOT_NAMED), ("Can't check", CANT_CHECK),
                           ("Names another facility", OTHER), ("Names the core", NAMED)]:
-            df[df["status"] == st][list(COLS)].rename(columns=COLS).to_excel(xw, sheet_name=sheet, index=False)
+            df[df["status"] == st][list(cols)].rename(columns=cols).to_excel(xw, sheet_name=sheet, index=False)
         fu.rename(columns={"group": "Lab (PPMS group)", "submitters": "Submitters", "first_order": "First order",
                            "last_order": "Last order", "services": "Services",
                            "papers_before": "Earlier matching papers"}).to_excel(xw, sheet_name="Follow up",
@@ -292,7 +344,7 @@ def write_workbook(rows, fu: pd.DataFrame, s: dict, path) -> None:
 
 def compact(r: dict) -> dict:
     """Keep only what the report reads; author lists of big consortium papers are otherwise huge."""
-    out = {k: r.get(k) for k in ("id", "source", "pmid", "pmcid", "title", "firstPublicationDate", "inEPMC",
+    out = {k: r.get(k) for k in ("id", "source", "pmid", "pmcid", "doi", "title", "firstPublicationDate", "inEPMC",
                                  "pubTypeList")}
     out["journalInfo"] = {"journal": {"title": ((r.get("journalInfo") or {}).get("journal") or {}).get("title", "")}}
     authors = []

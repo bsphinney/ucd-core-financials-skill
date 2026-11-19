@@ -236,3 +236,45 @@ def test_coauthor_rule_needs_the_pi_and_two_different_authors():
                       ("2", "Cheng Yu", "Okafor, Grace", "LC-MSMS", "2025-06-11", "2025-06-11", "2025-06-11")])
     two_submitters = _paper("40", [_author("Wang", "Dan", "Elsewhere"), _author("Cheng", "Yu", "Elsewhere")])
     assert P.find_papers(orders, CFG, FakeClient(technique={"Wang D": [two_submitters], "Cheng Y": [two_submitters]})) == []
+
+
+def _row(pmid, status=None, group="Okafor, Grace"):
+    return {"group": group, "matched": "Okafor G (PI)", "date": "2026-01-05", "title": f"T{pmid}", "journal": "J",
+            "pmid": pmid, "pmcid": f"PMC{pmid}", "doi": "", "link": "l", "status": status or P.NOT_NAMED,
+            "lab_orders": "x", "preprint": False}
+
+
+def test_review_records_cover_flagged_other_and_cant_check():
+    rows = [_row("1"), _row("2", P.NAMED), _row("3", P.OTHER), _row("4", P.CANT_CHECK)]
+    recs = P.review_records(rows)
+    assert [r["pmid"] for r in recs] == ["1", "3", "4"] and [r["n"] for r in recs] == [1, 2, 3]
+    assert recs[0]["key"] == P.row_key(rows[0])
+
+
+def test_workbook_adds_verdicts_and_ask_sheet(tmp_path):
+    rows = [_row("1"), _row("3", P.OTHER)]
+    verdicts = {P.row_key(rows[0]): {"verdict": "likely_core", "confidence": "high", "where": "this core",
+                                     "evidence": "run on the core's timsTOF", "action": "Ask the lab to credit the core"},
+                P.row_key(rows[1]): {"verdict": "other_facility", "confidence": "high", "where": "Other Center",
+                                     "evidence": "e", "action": "No action"}}
+    path = tmp_path / "p.xlsx"
+    P.write_workbook(rows, P.follow_up(ORDERS, [], CFG, as_of=datetime(2026, 4, 1)), CFG, path, verdicts=verdicts)
+    xl = pd.ExcelFile(path)
+    assert xl.sheet_names[0] == "Ask the lab"
+    ask = pd.read_excel(path, "Ask the lab")
+    assert list(ask["Title"]) == ["T1"] and ask.iloc[0]["Evidence"] == "run on the core's timsTOF"
+    assert pd.read_excel(path, "Names another facility").iloc[0]["Review"] == "other_facility"
+
+
+def test_cli_excerpts_writes_batches(tmp_path, monkeypatch, sample):
+    import shutil, json
+    from core_financials import cli, fulltext
+    folder = tmp_path / "core"
+    shutil.copytree("sample_data/example_core", folder, ignore=shutil.ignore_patterns("out"))
+    paper = _paper("50", [_author("Okafor", "Grace", "UC Davis")])
+    monkeypatch.setattr(P, "EuropePMC", lambda *a, **k: FakeClient())
+    monkeypatch.setattr(P, "find_papers", lambda *a, **k: [_row("50")])
+    monkeypatch.setattr(fulltext, "excerpts_for", lambda paper, *a, **k: {**paper, "ms_paragraphs": ["x"], "source": "test"})
+    assert cli.main(["publications", str(folder), "--excerpts"]) == 0
+    b = json.loads((folder / "out" / "internal" / "paper_review" / "batch1.json").read_text())
+    assert b[0]["pmid"] == "50" and b[0]["ms_paragraphs"] == ["x"]

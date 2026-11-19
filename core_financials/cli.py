@@ -116,7 +116,7 @@ def _build(folder: Path) -> int:
     return 0
 
 
-def _publications(folder: Path, limit=None) -> int:
+def _publications(folder: Path, limit=None, excerpts=False) -> int:
     from . import publications as P
     from .config import load_config
     from .inventory import scan
@@ -148,8 +148,12 @@ def _publications(folder: Path, limit=None) -> int:
         if hasattr(client, "save"):
             client.save()
     fu = P.follow_up(orders, rows, s)
+    review_dir = out / "paper_review"
+    if excerpts:
+        _write_excerpts(P, rows, s, client, review_dir)
+    verdicts = P.load_review(review_dir)
     path = out / "publications.xlsx"
-    P.write_workbook(rows, fu, s, path)
+    P.write_workbook(rows, fu, s, path, verdicts=verdicts or None)
     n = {st: sum(r["status"] == st for r in rows) for st in (P.NAMED, P.NOT_NAMED, P.CANT_CHECK, P.OTHER)}
     checkable = n[P.NAMED] + n[P.NOT_NAMED]
     print(f"\n{len(rows)} papers may use the core's data:")
@@ -163,8 +167,38 @@ def _publications(folder: Path, limit=None) -> int:
     if getattr(client, "truncated", None):
         print(f"  {len(client.truncated)} searches had more than 1,000 results and were cut off (very common "
               "names); add a technique_also list to narrow them.")
+    if verdicts:
+        ask = {k for k, v in verdicts.items() if str(v.get("action", "")).startswith("Ask")}
+        print(f"  Full-text review: {len(verdicts)} papers reviewed; {len(ask)} to raise with the lab "
+              "(sheet 'Ask the lab').")
     print(f"\nWrote {path} (internal: lab names).")
     return 0
+
+
+def _write_excerpts(P, rows, s, client, review_dir: Path) -> None:
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+    from . import fulltext as T
+    recs = P.review_records(rows)
+    for r in recs:  # papers found before DOIs were cached: look the DOI up once
+        if not r["doi"] and r["pmid"] and not r["pmcid"]:
+            hit = client.search(f"EXT_ID:{r['pmid']} AND SRC:MED")
+            r["doi"] = (hit[0].get("doi") if hit else "") or ""
+    ms = T.terms_regex(s["technique_terms"] + s.get("technique_also", []))
+    print(f"\nReading the full text of {len(recs)} papers (flagged, other facility, can't check)...", flush=True)
+    with ThreadPoolExecutor(4) as ex:
+        done = list(ex.map(lambda r: T.excerpts_for(r, s["institution"], s["core_names"], ms=ms), recs))
+    readable = [r for r in done if "error" not in r]
+    library = [r for r in done if "error" in r]
+    review_dir.mkdir(parents=True, exist_ok=True)
+    for old in review_dir.glob("verdict*.json"):
+        old.unlink()
+    paths = T.write_batches(readable, review_dir)
+    (review_dir / "index.json").write_text(json.dumps({r["n"]: r["key"] for r in done}))
+    (review_dir / "read_in_library.json").write_text(json.dumps(library, ensure_ascii=False, indent=1))
+    print(f"  {len(readable)} readable, in {len(paths)} batch files in {review_dir}")
+    print(f"  {len(library)} have no free full text: listed in read_in_library.json for someone with library access")
+    print("  Next: review each batch (reference/paper-review.md), then run this command again without --excerpts.")
 
 
 def _combine(paths, out: Path) -> int:
@@ -189,6 +223,8 @@ def main(argv=None) -> int:
     pp = sub.add_parser("publications", help="find customers' papers and check they name the core (online)")
     pp.add_argument("folder", type=Path)
     pp.add_argument("--limit", type=int, help="only the N labs with the most recent orders (for a quick test)")
+    pp.add_argument("--excerpts", action="store_true",
+                    help="also read flagged papers' full text and write excerpts for review")
     c = sub.add_parser("combine", help="compare several cores' benchmark.csv files")
     c.add_argument("files", nargs="+", type=Path)
     c.add_argument("--out", type=Path, default=Path("benchmark_comparison"))
@@ -200,7 +236,7 @@ def main(argv=None) -> int:
         print(f"ERROR: {folder} is not a folder")
         return 2
     if args.cmd == "publications":
-        return _publications(folder, args.limit)
+        return _publications(folder, args.limit, args.excerpts)
     return {"init": _init, "inventory": _inventory, "affiliations": _affiliations, "build": _build}[args.cmd](folder)
 
 

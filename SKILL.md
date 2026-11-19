@@ -157,6 +157,17 @@ Writes `out/internal/publications.xlsx`:
 - **Names the core**: for annual and RCCI reports.
 - **Follow up**: labs with recent orders and no paper yet.
 
+**Then read the flagged papers in full.** Run it again with `--excerpts`: it fetches each
+flagged, other-facility and can't-check paper's full text (Europe PMC, PubMed Central, then
+free preprint or repository copies) and writes the passages that say where the work was done
+to `out/internal/paper_review/batch*.json`. Review every batch as
+[reference/paper-review.md](reference/paper-review.md) describes (one reviewer agent per batch,
+in parallel), then run `run.py publications <folder>` once more: the verdicts go into the
+workbook, with an "Ask the lab" sheet of papers that most likely used the core's data without
+crediting it. Papers with no free full text are listed in `read_in_library.json`; publisher
+sites block automated reading, so never try to get past their bot checks. Add any new core
+wording the reviewers found (old names, staff) to `core_names` and re-run.
+
 When you report back, say "core not named", never "did not acknowledge": the lab may have
 used another facility for that paper. Read a flagged paper's methods before anyone writes
 to the lab. The workbook has lab and person names: internal only.
