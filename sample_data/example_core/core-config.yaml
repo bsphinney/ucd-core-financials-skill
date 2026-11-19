@@ -1,0 +1,14 @@
+# Example configuration for the fictional sample core. Copy and edit for a real core.
+core_name: "Example Imaging Core"
+short_name: "Imaging Core"
+financial_department: "XIMG001"
+project: "AR09999901"
+funds:
+  "12100": {label: "Revenue (12100)", role: operating}
+  "16200": {label: "Reserve Funds (16200)", role: reserve}
+  "13U00": {label: "General Funds (13U00)", role: general}
+personnel_prefixes: ["500", "501", "505", "506", "508"]
+brand: {primary: "#022851", accent: "#FFBF00"}
+rcci_window: {start: "2023-07-01", end: "2026-03-31"}
+assessment_note: null
+coa_overrides: {}
