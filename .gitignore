@@ -5,3 +5,4 @@ dist/
 .superpowers/
 sample_data/example_core/out/
 .DS_Store
+sample_data/example_core/affiliations.csv
