@@ -46,12 +46,20 @@ def parse_group(name: str) -> tuple[str, str]:
     return last, (first.split() or [""])[0].strip(".")
 
 
+PARTICLES = {"van", "der", "den", "de", "la", "le", "del", "della", "da", "di", "dos", "das", "du", "von", "ter", "st"}
+
+
 def parse_user(name: str) -> tuple[str, str]:
-    """PPMS user 'Last First' -> (last, first)."""
-    parts = re.sub(r"\(.*?\)", "", str(name)).split()
+    """PPMS user 'Last First' -> (last, first); leading particles stay with the surname (Van Der Berg)."""
     if "," in str(name):
         return parse_group(name)
-    return (parts[0], parts[1]) if len(parts) > 1 else ((parts or [""])[0], "")
+    parts = re.sub(r"\(.*?\)", "", str(name)).split()
+    if len(parts) < 2:
+        return ((parts or [""])[0], "")
+    i = 0
+    while i < len(parts) - 2 and parts[i].casefold() in PARTICLES:
+        i += 1
+    return " ".join(parts[:i + 1]), parts[i + 1]
 
 
 def _window(ords, years_after):
@@ -80,11 +88,12 @@ def people_from_orders(orders: pd.DataFrame, s: dict) -> list[dict]:
 # ---------- queries ----------
 
 def _term(field, t):
-    return f'{field}:"{t}"' if " " in t or "-" in t or "/" in t else f"{field}:{t}"
+    t = str(t).replace('"', "")
+    return f"{field}:{t}" if re.fullmatch(r"[A-Za-z0-9*]+", t) else f'{field}:"{t}"'
 
 
 def _base(last, first, start, end):
-    au = f"{last} {first[:1]}".strip()
+    au = f"{last} {first[:1]}".strip().replace('"', "")
     return f'AUTH:"{au}" AND FIRST_PDATE:[{start:%Y-%m-%d} TO {end:%Y-%m-%d}]'
 
 
@@ -100,7 +109,7 @@ def technique_query(last, first, start, end, s) -> str:
 
 
 def named_query(last, first, start, end, s, key="core_names") -> str:
-    names = " OR ".join(f'"{n}"' for n in s[key])
+    names = " OR ".join('"' + str(n).replace('"', "") + '"' for n in s[key])
     return f"{technique_query(last, first, start, end, s)} AND ({names})"
 
 
@@ -116,7 +125,9 @@ def _affs(a):
 
 
 def _given(name):
-    return re.sub(r"[^a-z]", "", (str(name).split() or [""])[0].casefold())
+    import unicodedata
+    plain = "".join(c for c in unicodedata.normalize("NFKD", str(name)) if not unicodedata.combining(c))
+    return re.sub(r"[^a-z]", "", (plain.split() or [""])[0].casefold())
 
 
 def _is(a, last, first):
@@ -127,7 +138,7 @@ def _is(a, last, first):
     full, mine = _given(a.get("firstName") or ""), _given(first)
     if len(full) > 1 and len(mine) > 1:  # both full names: one must start with the other (Chris/Christopher)
         return full.startswith(mine) or mine.startswith(full)
-    return (a.get("firstName") or a.get("initials") or "")[:1].casefold() == first[:1].casefold()
+    return _given(a.get("firstName") or a.get("initials") or "")[:1] == _given(first)[:1]
 
 
 def _is_review(p):
@@ -143,11 +154,25 @@ def _keep(paper, person, lab_people, s):
         return False
     if any(s["institution"].casefold() in _affs(a).casefold() for a in me):
         return True
-    others = [q for q in lab_people if q is not person]
-    return any(_is(a, q["last"], q["first"]) for q in others for a in _authors(paper))
+    # otherwise the PI and a submitter from the lab must both be authors, as two different author records
+    others = [q for q in lab_people if q is not person and (person["role"] == "PI" or q["role"] == "PI")]
+    return any(_is(a, q["last"], q["first"]) for q in others for a in _authors(paper) if not any(a is m for m in me))
 
 
-def find_papers(orders: pd.DataFrame, s: dict, client, progress=None) -> list[dict]:
+RANK = {NAMED: 3, OTHER: 2, NOT_NAMED: 1, CANT_CHECK: 0}
+
+
+def _safe(client, query, who, failed):
+    try:
+        return client.search(query)
+    except Exception as e:  # one bad search must not stop the report
+        if failed is not None and who not in failed:
+            failed.append(who)
+        print(f"  search failed for {who}: {str(e)[:80]}", flush=True)
+        return []
+
+
+def find_papers(orders: pd.DataFrame, s: dict, client, progress=None, failed=None) -> list[dict]:
     people = people_from_orders(orders, s)
     lab = {}
     for p in people:
@@ -159,7 +184,9 @@ def find_papers(orders: pd.DataFrame, s: dict, client, progress=None) -> list[di
     for i, (person, a) in enumerate(zip(people, args)):
         if progress:
             progress(i, len(people), person)
-        papers = [x for x in client.search(technique_query(*a, s)) if _keep(x, person, lab[person["group"]], s)]
+        who = f"{person['last']} {person['first']} ({person['group']})"
+        papers = [x for x in _safe(client, technique_query(*a, s), who, failed)
+                  if _keep(x, person, lab[person["group"]], s)]
         if papers:
             kept.append((person, a, papers))
     lists = [k for k in ("core_names", "other_facilities") if s[k]]
@@ -167,20 +194,22 @@ def find_papers(orders: pd.DataFrame, s: dict, client, progress=None) -> list[di
         client.prefetch([named_query(*a, s, k) for _, a, _ in kept for k in lists])
     found = {}  # (group, paper id) -> row
     for person, a, papers in kept:
-        named_ids = {x.get("id") for x in client.search(named_query(*a, s))} if s["core_names"] else set()
-        other_ids = ({x.get("id") for x in client.search(named_query(*a, s, "other_facilities"))}
+        who = f"{person['last']} {person['first']} ({person['group']})"
+        named_ids = ({x.get("id") for x in _safe(client, named_query(*a, s), who, failed)}
+                     if s["core_names"] else set())
+        other_ids = ({x.get("id") for x in _safe(client, named_query(*a, s, "other_facilities"), who, failed)}
                      if s["other_facilities"] else set())
         for paper in papers:
             key = (person["group"], paper.get("id"))
             who = f"{person['last']} {person['first'][:1]} ({person['role']})"
+            status = (NAMED if paper.get("id") in named_ids else OTHER if paper.get("id") in other_ids
+                      else NOT_NAMED if paper.get("inEPMC") == "Y" else CANT_CHECK)
             if key in found:
                 if who not in found[key]["matched"]:
                     found[key]["matched"] += f"; {who}"
-                if paper.get("id") in named_ids:
-                    found[key]["status"] = NAMED
+                if RANK[status] > RANK[found[key]["status"]]:
+                    found[key]["status"] = status
                 continue
-            status = (NAMED if paper.get("id") in named_ids else OTHER if paper.get("id") in other_ids
-                      else NOT_NAMED if paper.get("inEPMC") == "Y" else CANT_CHECK)
             g = orders[(orders["group"] == person["group"]) & orders["is_revenue"]]
             pid = paper.get("pmid") or paper.get("id")
             src = paper.get("source", "MED")
@@ -270,7 +299,7 @@ def compact(r: dict) -> dict:
     for a in (r.get("authorList") or {}).get("author") or []:
         c = {k: a.get(k) for k in ("lastName", "firstName", "initials")}
         affs = [x.get("affiliation", "")[:300] for x in (a.get("authorAffiliationDetailsList") or {}).get(
-            "authorAffiliation", [])[:1]]
+            "authorAffiliation", [])[:6]]
         c["authorAffiliationDetailsList"] = {"authorAffiliation": [{"affiliation": x} for x in affs]}
         authors.append(c)
     out["authorList"] = {"author": authors}
@@ -283,7 +312,7 @@ class EuropePMC:
     def __init__(self, cache_path=None, pause=0.1):
         self.cache_path = Path(cache_path) if cache_path else None
         self.cache = json.loads(self.cache_path.read_text()) if self.cache_path and self.cache_path.exists() else {}
-        self.pause = pause
+        self.pause, self.truncated = pause, []
 
     def search(self, query: str, max_results: int = 1000) -> list[dict]:
         if query in self.cache:
@@ -303,6 +332,8 @@ class EuropePMC:
                     time.sleep(2 ** attempt)
             page = d.get("resultList", {}).get("result", [])
             results += [compact(r) for r in page]
+            if int(d.get("hitCount") or 0) > max_results and query not in self.truncated:
+                self.truncated.append(query)
             nxt = d.get("nextCursorMark")
             if not page or not nxt or nxt == cursor or len(results) >= max_results:
                 break

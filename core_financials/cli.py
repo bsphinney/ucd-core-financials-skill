@@ -141,8 +141,9 @@ def _publications(folder: Path, limit=None) -> int:
     def progress(i, n, person):
         if i % 50 == 0:
             print(f"  {i}/{n} people searched", flush=True)
+    failed = []
     try:
-        rows = P.find_papers(orders, s, client, progress)
+        rows = P.find_papers(orders, s, client, progress, failed)
     finally:
         if hasattr(client, "save"):
             client.save()
@@ -157,6 +158,11 @@ def _publications(folder: Path, limit=None) -> int:
     if checkable:
         print(f"  Of the papers that could be checked, {n[P.NAMED] / checkable:.0%} name the core.")
     print(f"  Follow up: {len(fu)} labs with recent orders and no paper yet.")
+    if failed:
+        print(f"  {len(failed)} people could not be searched; run again to retry them (results are cached).")
+    if getattr(client, "truncated", None):
+        print(f"  {len(client.truncated)} searches had more than 1,000 results and were cut off (very common "
+              "names); add a technique_also list to narrow them.")
     print(f"\nWrote {path} (internal: lab names).")
     return 0
 

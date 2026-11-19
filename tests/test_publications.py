@@ -168,7 +168,7 @@ def test_client_keeps_only_needed_author_fields():
                "authorAffiliation": [{"affiliation": "UC Davis " + "x" * 500}, {"affiliation": "Other"}]}}]}}
     a = P.compact(raw)["authorList"]["author"][0]
     assert set(a) == {"lastName", "firstName", "initials", "authorAffiliationDetailsList"}
-    assert "Davis" in P._affs(a) and len(P._affs(a)) < 400
+    assert "Davis" in P._affs(a) and "Other" in P._affs(a) and len(P._affs(a)) < 400
 
 
 def test_find_papers_prefetches_all_queries_in_two_batches():
@@ -194,3 +194,45 @@ def test_technique_also_terms_are_required_together():
     s = {**CFG, "technique_also": ["trypsin", "peptide*"]}
     q = P.technique_query("Okafor", "Grace", datetime(2025, 6, 10).date(), datetime(2028, 6, 10).date(), s)
     assert q.count(" AND (") == 2 and "METHODS:trypsin" in q
+
+
+# ---- review fixes ----
+
+def test_compact_keeps_every_affiliation():
+    raw = {"id": "1", "authorList": {"author": [{"lastName": "Okafor", "firstName": "Grace", "authorAffiliationDetailsList": {
+        "authorAffiliation": [{"affiliation": "Shriners Hospital, Sacramento"}, {"affiliation": "University of California Davis"}]}}]}}
+    assert "Davis" in P._affs(P.compact(raw)["authorList"]["author"][0])
+
+
+def test_a_failing_search_is_reported_not_fatal():
+    class Flaky(FakeClient):
+        def search(self, query):
+            if "Lindqvist" in query:
+                raise OSError("HTTP 500")
+            return super().search(query)
+    failed = []
+    P.find_papers(ORDERS, CFG, Flaky(), failed=failed)
+    assert any("Lindqvist" in f for f in failed)
+
+
+@pytest.mark.parametrize("term,expected", [("Q:Exactive", 'METHODS:"Q:Exactive"'), ("peptide*", "METHODS:peptide*"),
+                                           ('say "hi"', 'METHODS:"say hi"'), ("LC-MS/MS", 'METHODS:"LC-MS/MS"')])
+def test_terms_are_quoted_safely(term, expected):
+    assert P._term("METHODS", term) == expected
+
+
+def test_multi_word_surnames_in_user_names():
+    assert P.parse_user("Van Der Berg Anna") == ("Van Der Berg", "Anna")
+    assert P.parse_user("de la Cruz Maria") == ("de la Cruz", "Maria")
+    assert P.parse_user("Lindqvist Mira") == ("Lindqvist", "Mira")
+
+
+def test_accented_given_names_match():
+    assert P._is({"lastName": "Okafor", "firstName": "Élodie"}, "Okafor", "Elodie")
+
+
+def test_coauthor_rule_needs_the_pi_and_two_different_authors():
+    orders = _orders([("1", "Wang Dan", "Okafor, Grace", "LC-MSMS", "2025-06-10", "2025-06-10", "2025-06-10"),
+                      ("2", "Cheng Yu", "Okafor, Grace", "LC-MSMS", "2025-06-11", "2025-06-11", "2025-06-11")])
+    two_submitters = _paper("40", [_author("Wang", "Dan", "Elsewhere"), _author("Cheng", "Yu", "Elsewhere")])
+    assert P.find_papers(orders, CFG, FakeClient(technique={"Wang D": [two_submitters], "Cheng Y": [two_submitters]})) == []

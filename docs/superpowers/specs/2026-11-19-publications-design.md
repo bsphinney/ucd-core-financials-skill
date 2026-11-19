@@ -1,4 +1,4 @@
-# Publications report — design (approved by Brett, 2026-11-19)
+# Publications report — design (approved 2026-11-19)
 
 **Why:** find papers by the core's customers that may use the core's data, flag those whose full
 text never names the core, and list labs whose data has not appeared yet so the core can follow up.
