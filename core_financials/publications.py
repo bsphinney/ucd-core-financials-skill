@@ -119,36 +119,43 @@ def _is_review(p):
     return any("review" in str(t).casefold() for t in (p.get("pubTypeList") or {}).get("pubType", []))
 
 
+def _keep(paper, person, lab_people, s):
+    pub = str(paper.get("firstPublicationDate") or "")
+    if _is_review(paper) or not (f"{person['start']:%Y-%m-%d}" <= pub <= f"{person['end']:%Y-%m-%d}"):
+        return False
+    me = [a for a in _authors(paper) if _is(a, person["last"], person["first"])]
+    if not me:
+        return False
+    if any(s["institution"].casefold() in _affs(a).casefold() for a in me):
+        return True
+    others = [q for q in lab_people if q is not person]
+    return any(_is(a, q["last"], q["first"]) for q in others for a in _authors(paper))
+
+
 def find_papers(orders: pd.DataFrame, s: dict, client, progress=None) -> list[dict]:
     people = people_from_orders(orders, s)
     lab = {}
     for p in people:
         lab.setdefault(p["group"], []).append(p)
-    found = {}  # (group, paper id) -> row
-    for i, person in enumerate(people):
+    args = [(p["last"], p["first"], p["start"], p["end"]) for p in people]
+    if hasattr(client, "prefetch"):
+        client.prefetch([technique_query(*a, s) for a in args])
+    kept = []  # (person, args, papers)
+    for i, (person, a) in enumerate(zip(people, args)):
         if progress:
             progress(i, len(people), person)
-        args = (person["last"], person["first"], person["start"], person["end"])
-        hits = client.search(technique_query(*args, s))
-        keep = []
-        for paper in hits:
-            pub = str(paper.get("firstPublicationDate") or "")
-            if _is_review(paper) or not (f"{person['start']:%Y-%m-%d}" <= pub <= f"{person['end']:%Y-%m-%d}"):
-                continue
-            me = [a for a in _authors(paper) if _is(a, person["last"], person["first"])]
-            if not me:
-                continue
-            at_inst = any(s["institution"].casefold() in _affs(a).casefold() for a in me)
-            others = [q for q in lab[person["group"]] if q is not person]
-            coauthor = any(_is(a, q["last"], q["first"]) for q in others for a in _authors(paper))
-            if at_inst or coauthor:
-                keep.append(paper)
-        if not keep:
-            continue
-        named_ids = {x.get("id") for x in client.search(named_query(*args, s))} if s["core_names"] else set()
-        other_ids = ({x.get("id") for x in client.search(named_query(*args, s, "other_facilities"))}
+        papers = [x for x in client.search(technique_query(*a, s)) if _keep(x, person, lab[person["group"]], s)]
+        if papers:
+            kept.append((person, a, papers))
+    lists = [k for k in ("core_names", "other_facilities") if s[k]]
+    if hasattr(client, "prefetch"):
+        client.prefetch([named_query(*a, s, k) for _, a, _ in kept for k in lists])
+    found = {}  # (group, paper id) -> row
+    for person, a, papers in kept:
+        named_ids = {x.get("id") for x in client.search(named_query(*a, s))} if s["core_names"] else set()
+        other_ids = ({x.get("id") for x in client.search(named_query(*a, s, "other_facilities"))}
                      if s["other_facilities"] else set())
-        for paper in keep:
+        for paper in papers:
             key = (person["group"], paper.get("id"))
             who = f"{person['last']} {person['first'][:1]} ({person['role']})"
             if key in found:
@@ -239,13 +246,29 @@ def write_workbook(rows, fu: pd.DataFrame, s: dict, path) -> None:
 
 # ---------- Europe PMC client ----------
 
+def compact(r: dict) -> dict:
+    """Keep only what the report reads; author lists of big consortium papers are otherwise huge."""
+    out = {k: r.get(k) for k in ("id", "source", "pmid", "pmcid", "title", "firstPublicationDate", "inEPMC",
+                                 "pubTypeList")}
+    out["journalInfo"] = {"journal": {"title": ((r.get("journalInfo") or {}).get("journal") or {}).get("title", "")}}
+    authors = []
+    for a in (r.get("authorList") or {}).get("author") or []:
+        c = {k: a.get(k) for k in ("lastName", "firstName", "initials")}
+        affs = [x.get("affiliation", "")[:300] for x in (a.get("authorAffiliationDetailsList") or {}).get(
+            "authorAffiliation", [])[:1]]
+        c["authorAffiliationDetailsList"] = {"authorAffiliation": [{"affiliation": x} for x in affs]}
+        authors.append(c)
+    out["authorList"] = {"author": authors}
+    return out
+
+
 class EuropePMC:
     """Search with a JSON cache, so re-runs and interrupted runs don't repeat queries."""
 
     def __init__(self, cache_path=None, pause=0.1):
         self.cache_path = Path(cache_path) if cache_path else None
         self.cache = json.loads(self.cache_path.read_text()) if self.cache_path and self.cache_path.exists() else {}
-        self.pause, self._new = pause, 0
+        self.pause = pause
 
     def search(self, query: str, max_results: int = 1000) -> list[dict]:
         if query in self.cache:
@@ -264,21 +287,38 @@ class EuropePMC:
                         raise
                     time.sleep(2 ** attempt)
             page = d.get("resultList", {}).get("result", [])
-            results += [{k: r.get(k) for k in ("id", "source", "pmid", "pmcid", "title", "firstPublicationDate",
-                                               "inEPMC", "authorList", "pubTypeList", "journalInfo")} for r in page]
+            results += [compact(r) for r in page]
             nxt = d.get("nextCursorMark")
             if not page or not nxt or nxt == cursor or len(results) >= max_results:
                 break
             cursor = nxt
             time.sleep(self.pause)
         self.cache[query] = results
-        self._new += 1
-        if self.cache_path and self._new % 25 == 0:
-            self.save()
         time.sleep(self.pause)
         return results
+
+    def prefetch(self, queries, workers=6):
+        """Run uncached queries in parallel, then save the cache."""
+        from concurrent.futures import ThreadPoolExecutor
+        todo = list(dict.fromkeys(q for q in queries if q not in self.cache))
+        done = 0
+        with ThreadPoolExecutor(workers) as ex:
+            for _ in ex.map(self._fetch_into_cache, todo):
+                done += 1
+                if done % 100 == 0:
+                    print(f"  {done}/{len(todo)} searches", flush=True)
+                    self.save()
+        self.save()
+
+    def _fetch_into_cache(self, q):
+        try:
+            self.search(q)
+        except Exception as e:  # one failed search must not stop the run; it is retried next time
+            print(f"  search failed, will retry on the next run: {str(e)[:80]}", flush=True)
 
     def save(self):
         if self.cache_path:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            self.cache_path.write_text(json.dumps(self.cache))
+            tmp = self.cache_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(dict(self.cache)))
+            tmp.replace(self.cache_path)

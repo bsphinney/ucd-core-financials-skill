@@ -160,3 +160,23 @@ def test_paper_naming_another_facility_is_not_flagged():
     rows = P.find_papers(ORDERS, CFG, FakeClient(technique={"Okafor G": [a, b]}, named={"Okafor G": [b]},
                                                  other={"Okafor G": [a, b]}))
     assert {r["pmid"]: r["status"] for r in rows} == {"20": P.OTHER, "21": P.NAMED}
+
+
+def test_client_keeps_only_needed_author_fields():
+    raw = {"id": "1", "authorList": {"author": [{"lastName": "Okafor", "firstName": "Grace", "initials": "G",
+           "fullName": "Okafor G", "authorId": {"type": "ORCID"}, "authorAffiliationDetailsList": {
+               "authorAffiliation": [{"affiliation": "UC Davis " + "x" * 500}, {"affiliation": "Other"}]}}]}}
+    a = P.compact(raw)["authorList"]["author"][0]
+    assert set(a) == {"lastName", "firstName", "initials", "authorAffiliationDetailsList"}
+    assert "Davis" in P._affs(a) and len(P._affs(a)) < 400
+
+
+def test_find_papers_prefetches_all_queries_in_two_batches():
+    class Batching(FakeClient):
+        batches = []
+        def prefetch(self, queries):
+            self.batches.append(len(queries))
+    paper = _paper("2", [_author("Lindqvist", "Mira", "Nordic University"), _author("Okafor", "Grace")])
+    c = Batching(technique={"Lindqvist M": [paper], "Okafor G": [paper]})
+    P.find_papers(ORDERS, CFG, c)
+    assert c.batches == [3, 4]   # 3 people; then named + other queries for the 2 people with papers
