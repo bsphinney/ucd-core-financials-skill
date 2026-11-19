@@ -65,3 +65,32 @@ def cfg(tmp_path):
     p.write_text('core_name: "Test Core"\nshort_name: "Test Core"\nfinancial_department: "XTST001"\n'
                  'funds:\n  "12100": {label: Revenue, role: operating}\n  "16200": {label: Reserve, role: reserve}\n')
     return load_config(p)
+
+
+def make_gl(rows, cfg):
+    """rows: (fund, account, date, amount) -> classified normalised GL frame."""
+    from core_financials.gl import COLUMNS, classify
+    recs = []
+    for i, (fund, acct, date, amt) in enumerate(rows):
+        recs.append({"fund": fund, "fund_desc": "", "account": acct, "account_desc": f"Acct {acct}",
+                     "journal_category": "Test", "journal_name": f"J{i}", "period": "", "date": pd.Timestamp(date),
+                     "amount": float(amt), "supplier": "", "line_desc": "", "source_file": "t", "layout": "page"})
+    return classify(pd.DataFrame(recs, columns=COLUMNS), cfg)
+
+
+@pytest.fixture
+def small_gl(cfg):
+    """FY2025 complete (Jul-24..Jun-25) and FY2026 Jul-Sep 2025.
+
+    Monthly: external sales 1000, assessment 150, internal recharge 2000, salary 1800 (2100 in FY26),
+    supplies 500. One-offs: contra 40 (Jan-25), recharge paid out 25 (Feb-25), carry-forward -5000 (Jul-24).
+    """
+    rows = []
+    for m in pd.date_range("2024-07-01", "2025-09-01", freq="MS"):
+        d = m + pd.Timedelta(days=9)
+        sal = 2100 if d >= pd.Timestamp("2025-07-01") else 1800
+        rows += [("12100", "410000", d, -1000), ("12100", "770009", d, 150), ("12100", "775000", d, -2000),
+                 ("12100", "500100", d, sal), ("12100", "522400", d, 500)]
+    rows += [("12100", "445100", "2025-01-12", 40), ("12100", "770006", "2025-02-12", 25),
+             ("12100", "300001", "2024-07-01", -5000)]
+    return make_gl(rows, cfg)
