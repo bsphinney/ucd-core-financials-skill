@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+:root{
+  --bg:#071a2e; --panel:#0e2038; --panel2:#132a47; --line:#1f3a5c; --ink:#eef2f7; --ink2:#a9b8cc; --muted:#7f93ad;
+  --gold:#FFBF00; --navy:#022851; --good:#37c893; --bad:#ff6b7d; --neutral:#8496AD;
+  --c1:#C07F00; --c2:#3D8FD9; --c3:#5FAA4E; --c4:#A96FE8; --c5:#E86A3B; --c6:#17A89A; --c7:#C94F63;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+header{background:var(--navy);border-bottom:3px solid var(--gold);padding:18px 24px}
+header h1{margin:0;font-size:22px;letter-spacing:.2px}
+header .sub{color:var(--ink2);font-size:13px;margin-top:4px}
+.staff-tag{display:inline-block;background:var(--gold);color:#1a1a1a;font-weight:700;font-size:12px;padding:2px 8px;border-radius:4px;margin-left:10px;vertical-align:middle}
+main{max-width:1280px;margin:0 auto;padding:16px}
+nav{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 14px}
+nav a{color:var(--ink2);text-decoration:none;font-size:12.5px;padding:4px 10px;border:1px solid var(--line);border-radius:999px}
+nav a:hover{color:var(--gold);border-color:var(--gold)}
+.banner{border-radius:8px;padding:10px 14px;margin:10px 0;font-size:13.5px}
+.banner.bad{background:#4a1420;border:1px solid var(--bad)}
+.banner.good{background:#0f3328;border:1px solid var(--good);color:#bfeedd}
+.banner.info{background:var(--panel2);border:1px solid var(--line)}
+.banner details{margin-top:6px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+section h2{margin:0 0 4px;font-size:17px}
+section .lede{color:var(--ink2);margin:0 0 12px;font-size:13px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.kpi .l{color:var(--ink2);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:24px;font-weight:700;margin-top:4px}
+.kpi .n{color:var(--muted);font-size:12px}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.chart{position:relative;height:320px}
+.chart.tall{height:420px}
+.chart.short{height:240px}
+.assess{border-left:4px solid var(--neutral)}
+.big{font-size:34px;font-weight:800}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--ink2);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--panel2)}
+.badge{display:inline-block;font-size:11px;padding:1px 6px;border-radius:4px;background:#2a3f5e;color:var(--gold);margin-left:6px}
+.note{color:var(--muted);font-size:12.5px;margin-top:8px}
+.missing{color:var(--ink2);font-style:italic;background:var(--panel2);border:1px dashed var(--line);border-radius:8px;padding:10px 12px}
+.toggle{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.toggle button,.toggle select{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:12.5px;cursor:pointer}
+.toggle button.on{background:var(--gold);color:#1a1a1a;border-color:var(--gold)}
+.hm td{text-align:center;font-size:12px;padding:5px}
+.bars .row{display:grid;grid-template-columns:90px 1fr 110px;gap:8px;align-items:center;margin:3px 0;font-size:12.5px}
+.bars .track{background:var(--panel2);height:12px;border-radius:3px;overflow:hidden}
+.bars .fill{height:100%;border-radius:3px}
+dialog{background:var(--panel);color:var(--ink);border:1px solid var(--gold);border-radius:10px;max-width:960px;width:94vw;padding:0}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog .hd{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+dialog .bd{padding:12px 16px;max-height:75vh;overflow:auto}
+dialog button.x{background:none;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:4px 10px;cursor:pointer}
+input.filter{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;margin:8px 0}
+footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
+@media (max-width:600px){main{padding:10px} .chart{height:260px} .big{font-size:26px}}
+</style>
+<!--__VENDOR__-->
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <div class="sub" id="subtitle"></div>
+</header>
+<main>
+  <div id="checks-banner"></div>
+  <nav id="nav"></nav>
+  <div id="content"></div>
+</main>
+<footer id="footer"></footer>
+<dialog id="modal"><div class="hd"><strong id="m-title"></strong><button class="x" onclick="document.getElementById('modal').close()">Close</button></div><div class="bd" id="m-body"></div></dialog>
+<script>
+/*__DATA__*/
+(function(){
+"use strict";
+const PAL=["#C07F00","#3D8FD9","#5FAA4E","#A96FE8","#E86A3B","#17A89A","#C94F63"];
+const GOOD="#37c893",BAD="#ff6b7d",NEUTRAL="#8496AD",GOLD="#FFBF00",INK2="#a9b8cc",GRID="#1f3a5c";
+const EXP_COLORS={"Salaries & Wages":"#3D8FD9","Benefits":"#C07F00","Lab Supplies & Chemicals":"#5FAA4E","Services & Repairs":"#A96FE8","Equipment":"#E86A3B","Other Operating":"#17A89A","Freight & Shipping":"#C94F63"};
+const REV_COLORS={"Internal Recharge (UCD)":"#3D8FD9","External Sales & Services":"#5FAA4E","Appropriations / Institutional Support":"#C07F00","Intercampus Recharge (other UCs)":"#A96FE8","Other Revenue":"#17A89A"};
+const AFF_ORDER=["UC Davis","Ext-UC","Ext-NP","Ext-FP","Unknown"];
+const AFF_LABEL={"UC Davis":"UC Davis","Ext-UC":"Other UC","Ext-NP":"External non-profit","Ext-FP":"Industry","Unknown":"Not yet classified"};
+const D=DATA, F=D.fin, U=D.use, A=D.aggie||{}, M=D.meta;
+Chart.defaults.color=INK2; Chart.defaults.borderColor=GRID; Chart.defaults.font.family=getComputedStyle(document.body).fontFamily;
+Chart.defaults.plugins.legend.labels.boxWidth=12;
+
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const usd=v=>(v<0?"-":"")+"$"+Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0});
+const usdk=v=>(v<0?"-":"")+"$"+(Math.abs(v)/1000).toLocaleString(undefined,{maximumFractionDigits:0})+"k";
+const pct=(v,d=0)=>v==null?"—":(v*100).toFixed(d)+"%";
+const cls=v=>v<0?"neg":"pos";
+const fyLabel=(fy,complete)=>"FY"+fy+((complete||[]).map(Number).includes(Number(fy))?"":" (partial)");
+const el=(tag,attrs,html)=>{const e=document.createElement(tag);Object.assign(e,attrs||{});if(html!=null)e.innerHTML=html;return e;};
+const content=document.getElementById("content"), nav=document.getElementById("nav");
+const charts={};
+
+function section(id,title,lede){
+  const s=el("section",{id});s.innerHTML=`<h2>${esc(title)}</h2>`+(lede?`<p class="lede">${lede}</p>`:"");
+  content.appendChild(s);nav.appendChild(el("a",{href:"#"+id},esc(title)));return s;
+}
+function missing(sec,key){sec.appendChild(el("div",{className:"missing"},esc(D.missing[key]||"Data not available.")));}
+function canvas(parent,cls){const w=el("div",{className:"chart "+(cls||"")});const c=el("canvas");w.appendChild(c);parent.appendChild(w);return c;}
+function moneyAxis(){return {ticks:{callback:v=>usdk(v)},grid:{color:GRID}};}
+
+/* ---------- header, checks ---------- */
+document.getElementById("title").innerHTML=esc(M.core_name)+" — Financial Dashboard"+(M.staff?'<span class="staff-tag">STAFF EDITION</span>':"");
+document.getElementById("subtitle").textContent="Generated "+M.generated+" · UC fiscal year runs July–June · ucd-core-financials v"+M.version;
+document.getElementById("footer").textContent="Built with the ucd-core-financials skill. Figures come only from the exports listed in reports-needed.md.";
+(function(){
+  const b=document.getElementById("checks-banner");
+  if(M.staff){b.appendChild(el("div",{className:"banner info"},"<strong>STAFF EDITION.</strong> Individual salary and benefit accounts and their transactions have been removed from this file; personnel costs appear only as annual totals. Unbilled orders are not included."));}
+  const ar=(D.checks||[]).filter(c=>c.kind==="arithmetic"), bad=ar.filter(c=>!c.passed);
+  if(!ar.length)return;
+  const rows=(D.checks||[]).map(c=>`<tr><td>${c.kind==="info"?"INFO":(c.passed?"PASS":"<b>FAIL</b>")}</td><td>${esc(c.name)}</td><td>${esc(c.detail)}</td></tr>`).join("");
+  const det=`<details><summary>Show all checks</summary><table>${rows}</table></details>`;
+  b.appendChild(el("div",{className:"banner "+(bad.length?"bad":"good")},bad.length?`<strong>${bad.length} reconciliation check${bad.length>1?"s":""} failed.</strong> Treat the affected figures with caution: ${bad.map(c=>esc(c.name)).join("; ")}.${det}`:`All ${ar.length} reconciliation checks passed.${det}`));
+})();
+
+/* ---------- modal (account drill-down) ---------- */
+function fyBars(byFy,title){
+  const ks=Object.keys(byFy||{}).sort();if(!ks.length)return "";
+  const mx=Math.max(...ks.map(k=>Math.abs(byFy[k])))||1;
+  return `<h4>${esc(title)}</h4><div class="bars">`+ks.map(k=>`<div class="row"><div>${fyLabel(k,F&&F.complete_fys)}</div><div class="track"><div class="fill" style="width:${Math.abs(byFy[k])/mx*100}%;background:${GOLD}"></div></div><div class="num">${usd(byFy[k])}</div></div>`).join("")+"</div>";
+}
+function openModal(title,html,after){document.getElementById("m-title").textContent=title;document.getElementById("m-body").innerHTML=html;document.getElementById("modal").showModal();if(after)after();}
+function accountModal(acct){
+  const d=F.account_details[acct];if(!d)return;
+  let h=fyBars(d.by_fy,"Spend by fiscal year (GL posted, Jul–Jun)");
+  const sup=(A.suppliers_by_account||{})[acct];
+  if(sup){
+    h+=`<h4>⚑ Companies paid — by fiscal year</h4>`;
+    Object.keys(sup).sort().forEach(fy=>{h+=`<div class="note">${fyLabel(fy,F.complete_fys)}</div><table>`+sup[fy].slice(0,12).map(s=>`<tr><td>${esc(s.supplier)}</td><td class="num">${usd(s.amount)}</td></tr>`).join("")+"</table>";});
+    const r=(A.po_vs_gl||[]).find(x=>x.account===acct);
+    if(r)h+=`<p class="note">PO-committed total ${usd(r.po_committed)} vs GL posted actual ${usd(r.gl_posted)}. PO amounts are what was ordered; multi-year service contracts are ordered up front, so they can run well above what has posted.</p>`;
+  }
+  h+=`<h4>Transactions (${d.transactions.length})</h4><input class="filter" id="txf" placeholder="Filter by text, supplier, journal, date…"><div id="txt"></div>`;
+  openModal(acct+" — "+d.desc,h,()=>{
+    const render=q=>{q=(q||"").toLowerCase();const rows=d.transactions.filter(t=>!q||JSON.stringify(t).toLowerCase().includes(q));
+      const sum=rows.reduce((a,t)=>a+t.amount,0);
+      document.getElementById("txt").innerHTML=`<table><tr><th>Date</th><th>Fund</th><th>Category</th><th>Journal</th><th>Supplier / line</th><th class="num">Amount</th></tr>`+rows.slice(0,800).map(t=>`<tr><td>${t.date}</td><td>${esc(t.fund)}</td><td>${esc(t.category)}</td><td>${esc(t.journal)}</td><td>${esc(t.supplier||t.line)}</td><td class="num">${usd(t.amount)}</td></tr>`).join("")+`<tr><td colspan="5"><b>${rows.length} rows</b></td><td class="num"><b>${usd(sum)}</b></td></tr></table>`;};
+    render("");document.getElementById("txf").addEventListener("input",e=>render(e.target.value));
+  });
+}
+function groupModal(g){
+  let h=fyBars(g.by_fy,"By fiscal year (GL posted, Jul–Jun)");
+  if(!g.accounts.length)h+=`<p class="note">Account-level detail is not included in this edition.</p>`;
+  else h+=`<h4>Accounts</h4><table><tr><th>Account</th><th>Description</th><th class="num">Amount</th></tr>`+g.accounts.map(a=>`<tr class="click" data-acct="${esc(a.account)}"><td>${esc(a.account)}${(A.suppliers_by_account||{})[a.account]?'<span class="badge">⚑ suppliers</span>':""}</td><td>${esc(a.desc)}</td><td class="num">${usd(a.amount)}</td></tr>`).join("")+"</table>";
+  openModal(g.name+" — "+usd(g.amount),h,()=>{document.querySelectorAll("#m-body tr.click").forEach(tr=>tr.addEventListener("click",()=>accountModal(tr.dataset.acct)));});
+}
+function clickChart(chart,fn){chart.canvas.addEventListener("click",e=>{const p=chart.getElementsAtEventForMode(e,"nearest",{intersect:true},true);if(p.length)fn(p[0].index,p[0]);});}
+
+/* ---------- finance sections ---------- */
+if(F){
+  const k=F.kpis, comp=F.complete_fys||[];
+  const sK=section("overview","Overview","Operating figures across every month in the ledger export. Carry-forward entries are excluded.");
+  const latest=comp.length?comp[comp.length-1]:null, latestNet=latest?(F.series_fy.find(r=>r.key==="FY"+latest)||{}).net:null;
+  sK.appendChild(el("div",{className:"grid g4"},
+    `<div class="kpi"><div class="l">Total income</div><div class="v">${usd(k.income)}</div><div class="n">net of campus assessment</div></div>`+
+    `<div class="kpi"><div class="l">Total expense</div><div class="v">${usd(k.expense)}</div><div class="n">operating (class 5)</div></div>`+
+    `<div class="kpi"><div class="l">Operating net</div><div class="v ${cls(k.net)}">${usd(k.net)}</div><div class="n">${F.all_fys.map(f=>"FY"+f).join(", ")}</div></div>`+
+    `<div class="kpi"><div class="l">${latest?"FY"+latest+" net":"Latest complete FY"}</div><div class="v ${latestNet!=null?cls(latestNet):""}">${latestNet!=null?usd(latestNet):"—"}</div><div class="n">most recent complete fiscal year</div></div>`));
+
+  const a=F.assessment;
+  const sA=section("assessment","Campus income assessment","The central campus charge on the core's income (accounts 770009 / 775004). Bad-debt write-offs are shown separately and are not part of it.");
+  sA.classList.add("assess");
+  const note=M.assessment_note?esc(M.assessment_note):`Across this ledger the assessment equals ${pct(a.per_dollar_external,1)} of external sales${a.match.months?` and matches ${pct(M.rate)} to the cent in ${a.match.matched} of ${a.match.months} months`:""}.`;
+  const aw=el("div",{className:"grid g2"});
+  aw.innerHTML=`<div><div class="big">${usd(a.total)}</div><div class="note">paid to campus over the ledger period</div><table style="margin-top:10px"><tr><td>Share of gross revenue</td><td class="num">${pct(a.pct_gross,1)}</td></tr><tr><td>Share of earned revenue (internal + external sales)</td><td class="num">${pct(a.pct_earned,1)}</td></tr><tr><td>Bad-debt write-offs (shown separately)</td><td class="num">${usd(a.contra_total)}</td></tr></table><p class="note">${note}</p><p class="note">Partial fiscal years are labelled; compare complete years only.</p></div>`;
+  const ac=el("div");aw.appendChild(ac);sA.appendChild(aw);
+  const afy=Object.keys(a.by_fy).sort();
+  new Chart(canvas(ac,"short"),{type:"bar",data:{labels:afy.map(f=>fyLabel(f,comp)),datasets:[{label:"Assessment",data:afy.map(f=>a.by_fy[f]),backgroundColor:NEUTRAL,borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>usd(c.raw)}}},scales:{y:moneyAxis(),x:{grid:{display:false}}}}});
+
+  const sS=section("sankey","Follow the money","Gross revenue sources (left) flow through the core to expenses, the campus assessment and the surplus (right). Inflow equals outflow.");
+  const nodeColor=n=>REV_COLORS[n]||EXP_COLORS[n]||(n===M.short_name?GOLD:n==="Campus Assessment"?NEUTRAL:n==="Net Surplus"?GOOD:n.startsWith("Draw on")?BAD:"#5b7090");
+  new Chart(canvas(sS,"tall"),{type:"sankey",data:{datasets:[{data:F.sankey,colorFrom:c=>nodeColor(c.dataset.data[c.dataIndex].from),colorTo:c=>nodeColor(c.dataset.data[c.dataIndex].to),colorMode:"gradient",color:"#eef2f7",size:"max",nodePadding:14}]},options:{maintainAspectRatio:false,plugins:{tooltip:{callbacks:{label:c=>{const d=c.dataset.data[c.dataIndex];return d.from+" → "+d.to+": "+usd(d.flow);}}}}}});
+
+  const sE=section("expenses","What drives your expenses","Tile area is each group's share of operating expense. Click a tile to see its accounts.");
+  const eg=F.expense_groups.filter(g=>g.amount>0);
+  const tm=new Chart(canvas(sE,"tall"),{type:"treemap",data:{datasets:[{tree:eg.map(g=>({name:g.name,amount:g.amount})),key:"amount",borderWidth:2,borderColor:"#071a2e",spacing:1,
+    backgroundColor:c=>c.type==="data"?(EXP_COLORS[c.raw._data.name]||PAL[c.dataIndex%7]):"transparent",
+    labels:{display:true,color:"#fff",font:{size:12,weight:"bold"},formatter:c=>[c.raw._data.name,usd(c.raw._data.amount)]}}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>c[0].raw._data.name,label:c=>usd(c.raw._data.amount)+" · "+pct(c.raw._data.amount/k.expense,1)}}}}});
+  clickChart(tm,i=>groupModal(eg[i]));
+
+  const sR=section("revenue","Where your money comes from","Gross revenue by source, before the campus assessment. Click a slice to see its accounts.");
+  const rg=F.revenue_groups;
+  const dn=new Chart(canvas(sR),{type:"doughnut",data:{labels:rg.map(g=>g.name),datasets:[{data:rg.map(g=>g.amount),backgroundColor:rg.map((g,i)=>REV_COLORS[g.name]||PAL[i]),borderColor:"#0e2038",borderWidth:2}]},options:{maintainAspectRatio:false,cutout:"58%",plugins:{legend:{position:"right"},tooltip:{callbacks:{label:c=>c.label+": "+usd(c.raw)+" ("+pct(c.raw/F.gross_total,1)+")"}}}}});
+  clickChart(dn,i=>groupModal(rg[i]));
+  if(F.deductions.length)sR.appendChild(el("p",{className:"note"},"Recharges paid out from revenue accounts (shown as an outflow, not revenue): "+F.deductions.map(d=>esc(d.account+" "+d.desc)+" "+usd(d.amount)).join("; ")));
+
+  const sT=section("trend","Income and expense over time","Switch between fiscal years and months, and filter to one fund.");
+  const tg=el("div",{className:"toggle"});tg.innerHTML=`<button data-f="fy" class="on">By fiscal year</button><button data-f="month">Monthly</button><select id="fundsel"><option value="">All funds</option>${Object.keys(F.series_by_fund).map(f=>`<option value="${esc(f)}">${esc(M.funds[f]||f)}</option>`).join("")}</select>`;
+  sT.appendChild(tg);
+  let freq="fy",fund="";
+  const tc=new Chart(canvas(sT),{type:"bar",data:{labels:[],datasets:[{label:"Income",data:[],backgroundColor:PAL[1],borderRadius:3},{label:"Expense",data:[],backgroundColor:PAL[0],borderRadius:3},{type:"line",label:"Net",data:[],borderColor:GOOD,backgroundColor:GOOD,pointRadius:3,borderWidth:2}]},options:{maintainAspectRatio:false,interaction:{mode:"index",intersect:false},plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+": "+usd(c.raw)}}},scales:{y:moneyAxis(),x:{grid:{display:false}}}}});
+  const paint=()=>{const s=fund?F.series_by_fund[fund][freq]:(freq==="fy"?F.series_fy:F.series_month);
+    tc.data.labels=s.map(r=>freq==="fy"?fyLabel(r.key.slice(2),comp):r.key);tc.data.datasets[0].data=s.map(r=>r.income);tc.data.datasets[1].data=s.map(r=>r.expense);tc.data.datasets[2].data=s.map(r=>r.net);tc.update();};
+  tg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{tg.querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");freq=b.dataset.f;paint();}));
+  tg.querySelector("select").addEventListener("change",e=>{fund=e.target.value;paint();});
+  paint();
+
+  const sN=section("net","Operating net by fiscal year and fund","");
+  const gN=el("div",{className:"grid g2"});sN.appendChild(gN);
+  const c1=el("div"),c2=el("div");gN.appendChild(c1);gN.appendChild(c2);
+  new Chart(canvas(c1),{type:"bar",data:{labels:F.series_fy.map(r=>fyLabel(r.key.slice(2),comp)),datasets:[{label:"Net",data:F.series_fy.map(r=>r.net),backgroundColor:F.series_fy.map(r=>r.net<0?BAD:GOOD),borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>usd(c.raw)}}},scales:{y:moneyAxis(),x:{grid:{display:false}}}}});
+  const fundsAll={};F.fund_summary.forEach(r=>{const f=fundsAll[r.fund]=fundsAll[r.fund]||{label:r.label,income:0,expense:0,net:0};f.income+=r.income;f.expense+=r.expense;f.net+=r.net;});
+  const fk=Object.keys(fundsAll);
+  new Chart(canvas(c2),{type:"bar",data:{labels:fk.map(f=>fundsAll[f].label),datasets:[{label:"Income",data:fk.map(f=>fundsAll[f].income),backgroundColor:PAL[1]},{label:"Expense",data:fk.map(f=>fundsAll[f].expense),backgroundColor:PAL[0]},{label:"Net",data:fk.map(f=>fundsAll[f].net),backgroundColor:fk.map(f=>fundsAll[f].net<0?BAD:GOOD)}]},options:{indexAxis:"y",maintainAspectRatio:false,plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+": "+usd(c.raw)}}},scales:{x:moneyAxis(),y:{grid:{display:false}}}}});
+  const fys=F.all_fys;
+  let mt=`<h4>Fund summary by fiscal year</h4><div style="overflow-x:auto"><table><tr><th>Fund</th><th></th>${fys.map(f=>`<th class="num">${fyLabel(f,comp)}</th>`).join("")}</tr>`;
+  fk.forEach(f=>{["income","expense","net"].forEach((m,i)=>{mt+=`<tr><td>${i?"":esc(fundsAll[f].label)}</td><td>${m}</td>${fys.map(fy=>{const r=F.fund_summary.find(x=>x.fund===f&&x.fy===fy);const v=r?r[m]:0;return `<td class="num ${m==="net"?cls(v):""}">${usd(v)}</td>`;}).join("")}</tr>`;});});
+  sN.appendChild(el("div",null,mt+"</table></div>"));
+
+  const sTop=section("accounts","Top revenue and expense accounts","Click an expense row for its spend by fiscal year, the companies paid (when the PO report is present) and every transaction.");
+  const gT=el("div",{className:"grid g2"});sTop.appendChild(gT);
+  gT.appendChild(el("div",null,`<h4>Revenue</h4><table><tr><th>Account</th><th>Description</th><th class="num">Amount</th></tr>`+F.top_revenue.map(r=>`<tr class="click" data-acct="${esc(r.account)}"><td>${esc(r.account)}</td><td>${esc(r.desc)}</td><td class="num">${usd(r.amount)}</td></tr>`).join("")+"</table>"));
+  gT.appendChild(el("div",null,`<h4>Expense</h4><table><tr><th>Account</th><th>Description</th><th class="num">Amount</th></tr>`+F.top_expense.map(r=>r.aggregate?`<tr><td>—</td><td>${esc(r.desc)}</td><td class="num">${usd(r.amount)}</td></tr>`:`<tr class="click" data-acct="${esc(r.account)}"><td>${esc(r.account)}${(A.suppliers_by_account||{})[r.account]?'<span class="badge">⚑ suppliers</span>':""}</td><td>${esc(r.desc)}</td><td class="num">${usd(r.amount)}</td></tr>`).join("")+"</table>"));
+  sTop.querySelectorAll("tr.click").forEach(tr=>tr.addEventListener("click",()=>accountModal(tr.dataset.acct)));
+
+  const sC=section("recovery","Cost recovery and per-dollar split","Earned revenue (internal recharge + external sales) as a share of operating expense, and where each dollar of gross revenue went.");
+  const gC=el("div",{className:"grid g2"});sC.appendChild(gC);const cc1=el("div"),cc2=el("div");gC.appendChild(cc1);gC.appendChild(cc2);
+  const crk=Object.keys(F.cost_recovery_by_fy).sort();
+  new Chart(canvas(cc1),{type:"bar",data:{labels:crk.map(f=>fyLabel(f,comp)),datasets:[{label:"Cost recovery",data:crk.map(f=>F.cost_recovery_by_fy[f]),backgroundColor:PAL[1],borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>pct(c.raw)}}},scales:{y:{ticks:{callback:v=>pct(v)},suggestedMax:1.2},x:{grid:{display:false}}}}});
+  const pdRows=Object.keys(F.per_dollar.by_fy).length?F.per_dollar.by_fy:{"all":F.per_dollar.all};
+  const pkeys=[["personnel","Personnel",PAL[1]],["supplies_services","Supplies & services",PAL[2]],["other_operating","Other operating",PAL[5]],["assessment","Campus assessment",NEUTRAL],["surplus","Left over (surplus or deficit)",GOOD]];
+  const pdl=Object.keys(pdRows).filter(k=>pdRows[k]);
+  new Chart(canvas(cc2),{type:"bar",data:{labels:pdl.map(f=>f==="all"?"All data":"FY"+f),datasets:pkeys.map(([key,lab,col])=>({label:lab,data:pdl.map(f=>pdRows[f][key]*100),backgroundColor:key==="surplus"?pdl.map(f=>pdRows[f].surplus<0?BAD:GOOD):col}))},options:{indexAxis:"y",maintainAspectRatio:false,plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+": "+c.raw.toFixed(1)+"¢"}}},scales:{x:{stacked:true,ticks:{callback:v=>v+"¢"}},y:{stacked:true,grid:{display:false}}}}});
+
+  const sB=section("balance","Fund balance, bridge and forecast","Running operating surplus or deficit since the start of the ledger export, what moved the balance in the latest complete year, and a year-end projection.");
+  const gB=el("div",{className:"grid g2"});sB.appendChild(gB);const b1=el("div"),b2=el("div");gB.appendChild(b1);gB.appendChild(b2);
+  new Chart(canvas(b1),{type:"line",data:{labels:F.balance_series.map(r=>r.month),datasets:[{label:"Cumulative net",data:F.balance_series.map(r=>r.cumulative_net),borderColor:GOLD,backgroundColor:"rgba(255,191,0,.12)",fill:true,pointRadius:0,borderWidth:2}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>usd(c.raw)}}},scales:{y:moneyAxis(),x:{grid:{display:false},ticks:{maxTicksLimit:12}}}}});
+  if(F.bridge.steps.length){let run=0;const bars=F.bridge.steps.map((s,i)=>{if(i===0||s.step.startsWith("=")){run=s.amount;return [0,s.amount];}const r=[run,run+s.amount];run+=s.amount;return r;});
+    new Chart(canvas(b2),{type:"bar",data:{labels:F.bridge.steps.map(s=>s.step),datasets:[{label:"FY"+F.bridge.fy,data:bars,backgroundColor:F.bridge.steps.map((s,i)=>i===0||s.step.startsWith("=")?NEUTRAL:(s.amount<0?BAD:GOOD)),borderRadius:3}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},title:{display:true,text:"What moved the balance in FY"+F.bridge.fy,color:"#eef2f7"},tooltip:{callbacks:{label:c=>usd(F.bridge.steps[c.dataIndex].amount)}}},scales:{y:moneyAxis(),x:{grid:{display:false}}}}});}
+  const fc=F.forecast;
+  sB.appendChild(el("div",{className:"note"},fc?`<strong>FY${fc.fy} forecast (projection):</strong> ${usd(fc.ytd_net)} net after ${fc.months_seen} months; projected year-end net ${usd(fc.projected)} (range ${usd(fc.low)} to ${usd(fc.high)}), assuming the remaining months go as they did in ${fc.based_on_fys.map(f=>"FY"+f).join(", ")}.`:"No forecast: the latest fiscal year is complete, or there is no earlier complete year to project from."));
+  if(F.bridge.steps.length&&!(A.balances&&A.balances.length))sB.appendChild(el("p",{className:"note"},"Beginning balance set to $0 because no Department P&L was provided."));
+
+  const sF=section("carryforward","Net position carry-forward (reference only)","Account 300001 holds prior-year balances rolled forward each July. It is excluded from every operating figure above and listed here so nothing is dropped silently.");
+  sF.appendChild(el("div",null,F.carryforward.length?`<table><tr><th>Fund</th><th>FY</th><th class="num">Amount</th></tr>`+F.carryforward.map(r=>`<tr><td>${esc(M.funds[r.fund]||r.fund)}</td><td>FY${r.fy}</td><td class="num">${usd(r.amount)}</td></tr>`).join("")+"</table>":`<p class="note">No carry-forward entries in this export.</p>`));
+} else {
+  missing(section("overview","Financial overview",""),"gl");
+}
+
+/* ---------- other Aggie Enterprise reports ---------- */
+const sP=section("balances","Official fund balances","From the Department P&L (Balances tab). This uses the P&L's own revenue classification, so it is not line-for-line comparable with the operating figures above; it is the official net-position snapshot. UC sign convention: negative = surplus (credit), positive = deficit.");
+if(A.balances&&A.balances.length){const t=A.balances_total;sP.appendChild(el("div",{style:"overflow-x:auto"},`<table><tr><th>Fund</th><th>Project</th><th class="num">Beginning</th><th class="num">Revenue</th><th class="num">Expense</th><th class="num">Ending</th></tr>`+A.balances.map(r=>`<tr><td>${esc(M.funds[r.fund]||r.fund)}</td><td>${esc(r.project)}</td><td class="num">${usd(r.beginning)}</td><td class="num">${usd(r.revenue)}</td><td class="num">${usd(r.expense)}</td><td class="num ${r.ending>0?"neg":""}">${usd(r.ending)}</td></tr>`).join("")+`<tr><td colspan="2"><b>Total</b></td><td class="num"><b>${usd(t.beginning)}</b></td><td class="num"><b>${usd(t.revenue)}</b></td><td class="num"><b>${usd(t.expense)}</b></td><td class="num ${t.ending>0?"neg":""}"><b>${usd(t.ending)}</b></td></tr></table>`));}
+else missing(sP,"pnl");
+
+const sG=section("glide","Card, travel and freight spending","From the GLIDE report (GL expense lines only). Category totals only; no cardholder or traveller names are read.");
+if(A.glide&&A.glide.length){new Chart(canvas(sG,"short"),{type:"bar",data:{labels:A.glide.map(r=>r.category),datasets:[{label:"Spend",data:A.glide.map(r=>r.amount),backgroundColor:PAL[4],borderRadius:3}]},options:{indexAxis:"y",maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>usd(c.raw)}}},scales:{x:moneyAxis(),y:{grid:{display:false}}}}});}
+else missing(sG,"glide");
+
+const sSup=section("suppliers","Supplier concentration","Share of non-personnel PO spend going to the largest suppliers (PO-committed amounts).");
+const scn=A.supplier_concentration;
+if(scn&&scn.top&&scn.top.length){sSup.appendChild(el("div",null,`<table><tr><th>Supplier</th><th class="num">Share</th></tr>`+scn.top.map(t=>`<tr><td>${esc(t.supplier)}</td><td class="num">${pct(t.share,1)}</td></tr>`).join("")+`</table><p class="note">Top ${scn.top.length} of ${scn.n_suppliers} suppliers = ${pct(scn.top_n_share)} of spend.</p>`));}
+else missing(sSup,"po");
+
+/* ---------- usership ---------- */
+if(U){
+  const uc=U.complete_fys||[];
+  const sU=section("usership","Customers and usage","From the PPMS Order details report. Revenue counts only accepted or completed orders.");
+  const ov=U.overview_by_fy;
+  sU.appendChild(el("div",{style:"overflow-x:auto"},`<table><tr><th>Fiscal year</th><th class="num">Revenue</th><th class="num">Orders</th><th class="num">Lab groups</th><th class="num">Users</th></tr>`+ov.map(r=>`<tr><td>${fyLabel(r.fy,uc)}</td><td class="num">${usd(r.revenue)}</td><td class="num">${r.orders}</td><td class="num">${r.groups}</td><td class="num">${r.users}</td></tr>`).join("")+`</table><p class="note">${U.quotes.count} unconverted quotes worth ${usd(U.quotes.total)} are excluded.</p>`));
+  const gU=el("div",{className:"grid g2"});sU.appendChild(gU);const u1=el("div"),u2=el("div"),u3=el("div"),u4=el("div");[u1,u2,u3,u4].forEach(x=>gU.appendChild(x));
+  const mix=U.mix_by_fy;const present=AFF_ORDER.filter(a=>mix.some(r=>r[a]));
+  new Chart(canvas(u1),{type:"bar",data:{labels:mix.map(r=>fyLabel(r.fy,uc)),datasets:present.map((a,i)=>({label:AFF_LABEL[a],data:mix.map(r=>(r[a]||0)*100),backgroundColor:PAL[i]}))},options:{maintainAspectRatio:false,plugins:{title:{display:true,text:"Customer mix (share of revenue)",color:"#eef2f7"},tooltip:{callbacks:{label:c=>c.dataset.label+": "+c.raw.toFixed(1)+"%"}}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,max:100,ticks:{callback:v=>v+"%"}}}}});
+  const cn=U.concentration;
+  new Chart(canvas(u2),{type:"bar",data:{labels:["Top 5 labs","Top 10 labs","Top 20 labs"],datasets:[{data:[cn.top5,cn.top10,cn.top20].map(v=>(v||0)*100),backgroundColor:PAL[3],borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},title:{display:true,text:`Share of revenue from the largest labs (of ${cn.n_groups})`,color:"#eef2f7"},tooltip:{callbacks:{label:c=>c.raw.toFixed(1)+"%"}}},scales:{y:{max:100,ticks:{callback:v=>v+"%"}},x:{grid:{display:false}}}}});
+  const nv=U.new_vs_returning;
+  new Chart(canvas(u3),{type:"bar",data:{labels:nv.map(r=>fyLabel(r.fy,uc)),datasets:[{label:"New labs",data:nv.map(r=>r.new),backgroundColor:PAL[2]},{label:"Returning labs",data:nv.map(r=>r.returning),backgroundColor:PAL[1]}]},options:{maintainAspectRatio:false,plugins:{title:{display:true,text:"New and returning labs",color:"#eef2f7"}},scales:{x:{grid:{display:false}}}}});
+  const bl=U.backlog_monthly;
+  new Chart(canvas(u4),{type:"line",data:{labels:bl.map(r=>r.month),datasets:[{label:"Open orders",data:bl.map(r=>r.open),borderColor:PAL[4],backgroundColor:"rgba(232,106,59,.15)",fill:true,pointRadius:0,borderWidth:2}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},title:{display:true,text:"Backlog: accepted, not yet completed (month end)",color:"#eef2f7"}},scales:{x:{grid:{display:false},ticks:{maxTicksLimit:12}}}}});
+
+  const sTa=section("turnaround","Turnaround","Days from accepted to completed. Median, and the middle half of orders (25th–75th percentile).");
+  sTa.appendChild(el("div",null,`<table><tr><th>Service</th><th class="num">Orders</th><th class="num">Median days</th><th class="num">25th–75th pct</th></tr>`+U.turnaround.by_service.map(s=>`<tr><td>${esc(s.service)}</td><td class="num">${s.n}</td><td class="num">${s.median.toFixed(1)}</td><td class="num">${s.p25.toFixed(0)}–${s.p75.toFixed(0)}</td></tr>`).join("")+"</table>"));
+  const q=U.turnaround.by_quarter;
+  new Chart(canvas(sTa,"short"),{type:"line",data:{labels:q.map(r=>r.quarter),datasets:[{label:"Median days",data:q.map(r=>r.median),borderColor:GOLD,pointRadius:3,borderWidth:2}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}}}}});
+
+  const sH=section("seasonality","Busy and quiet months","Orders placed per month, by fiscal year.");
+  const hm=U.orders_heatmap, mx=Math.max(1,...hm.counts.flat()), names=["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
+  sH.appendChild(el("div",{style:"overflow-x:auto"},`<table class="hm"><tr><th></th>${names.map(n=>`<th>${n}</th>`).join("")}</tr>`+hm.fys.map((fy,i)=>`<tr><th>FY${fy}</th>${hm.counts[i].map(v=>`<td style="background:rgba(61,143,217,${(0.08+0.92*v/mx).toFixed(2)})">${v}</td>`).join("")}</tr>`).join("")+"</table>"));
+
+  const sTg=section("groups","Top lab groups and services","");
+  const gG=el("div",{className:"grid g2"});sTg.appendChild(gG);
+  gG.appendChild(el("div",null,`<h4>Top lab groups</h4><table><tr><th>Group</th><th>Type</th><th class="num">Revenue</th><th class="num">Orders</th></tr>`+U.top_groups.map(g=>`<tr><td>${esc(g.group)}</td><td>${esc(AFF_LABEL[g.affiliation]||g.affiliation)}</td><td class="num">${usd(g.revenue)}</td><td class="num">${g.orders}</td></tr>`).join("")+"</table>"));
+  gG.appendChild(el("div",null,`<h4>Revenue by service</h4><table><tr><th>Service</th><th class="num">Revenue</th><th class="num">Orders</th></tr>`+U.revenue_by_service.map(s=>`<tr><td>${esc(s.service)}</td><td class="num">${usd(s.revenue)}</td><td class="num">${s.orders}</td></tr>`).join("")+"</table>"));
+
+  if(U.unbilled){const sUb=section("unbilled","Completed but not invoiced","PPMS order lines that are completed but marked 'Invoiced = N'. Check whether these were billed.");
+    sUb.appendChild(el("div",null,U.unbilled.lines.length?`<p><strong>${U.unbilled.lines.length} lines, ${usd(U.unbilled.total)}</strong></p><table><tr><th>Order</th><th>Group</th><th>Service</th><th>Completed</th><th class="num">Price</th></tr>`+U.unbilled.lines.map(l=>`<tr><td>${esc(l.order)}</td><td>${esc(l.group)}</td><td>${esc(l.service)}</td><td>${l.completed}</td><td class="num">${usd(l.price)}</td></tr>`).join("")+"</table>":`<p class="note">None found.</p>`));}
+} else {
+  missing(section("usership","Customers and usage",""),"ppms");
+}
+
+const sNotes=section("notes","Reading this dashboard","");
+sNotes.appendChild(el("div",{className:"note"},`<p><b>Fiscal year</b> runs July–June; January is the midpoint. The first and last fiscal years in an export are usually partial and are labelled; compare complete years only.</p><p><b>Signs.</b> Income is shown positive and expense positive; net = income − expense. The campus assessment is deducted from income. Carry-forward (300001) is excluded.</p><p><b>PO data</b> is committed (ordered), not posted. Service contracts are ordered up front.</p>`));
+})();
+</script>
+</body>
+</html>
