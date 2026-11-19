@@ -38,7 +38,7 @@ def _drop_month(src, dst, year, month):
 
 def test_reports_needed_lists_missing_po_and_gl_gap(tmp_path):
     for f in SAMPLE.iterdir():
-        if f.name not in ("po_spend_2023-12_to_2026-04.xlsx", "gl_page_2024-01_to_2026-09.xlsx"):
+        if f.is_file() and f.name not in ("po_spend_2023-12_to_2026-04.xlsx", "gl_page_2024-01_to_2026-09.xlsx"):
             shutil.copy(f, tmp_path / f.name)
     _drop_month(SAMPLE / "gl_page_2024-01_to_2026-09.xlsx", tmp_path / "gl.xlsx", 2025, 3)
     cfg = load_config(tmp_path / "core-config.yaml")
