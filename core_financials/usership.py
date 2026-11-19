@@ -108,7 +108,12 @@ def backlog_monthly(orders) -> list:
 def orders_heatmap(orders) -> dict:
     r = _rev(orders).drop_duplicates(subset=["order"])
     fys = sorted(int(f) for f in r["fy"].unique())
-    counts = [[int(((r["fy"] == fy) & (r["ordered"].dt.month == m)).sum()) for m in FY_MONTHS] for fy in fys]
+    first, last = orders["ordered"].min().to_period("M"), orders["ordered"].max().to_period("M")
+
+    def cell(fy, m):  # None = outside the dates the export covers, not "no orders"
+        p = pd.Period(year=fy - 1 if m >= 7 else fy, month=m, freq="M")
+        return int(((r["fy"] == fy) & (r["ordered"].dt.month == m)).sum()) if first <= p <= last else None
+    counts = [[cell(fy, m) for m in FY_MONTHS] for fy in fys]
     return {"fys": fys, "months": FY_MONTHS, "counts": counts}
 
 

@@ -98,12 +98,15 @@ def _per_dollar(fin, save):
     colors = [PALETTE[1], PALETTE[2], PALETTE[5], NEUTRAL, SURPLUS]
     fig, ax = _fig(8, 1.2 + 0.7 * len(rows))
     labels = list(rows)
+    right = 1.0
     for i, lab in enumerate(labels):
         left = 0.0
         for (k, name), c in zip(keys, colors):
             v = rows[lab][k]
             if k == "surplus" and v < 0:
-                ax.text(1.01, i, f"deficit {abs(v) * 100:.0f}¢", va="center", color=DEFICIT, fontsize=9)
+                ax.annotate(f"deficit {abs(v) * 100:.0f}¢", (left, i), xytext=(6, 0), textcoords="offset points",
+                            va="center", color=DEFICIT, fontsize=9, fontweight="bold")
+                right = max(right, left)
                 continue
             ax.barh(i, v, left=left, color=c, edgecolor=SURFACE, linewidth=2, height=0.6,
                     label=name if i == 0 else None)
@@ -113,7 +116,8 @@ def _per_dollar(fin, save):
             left += v
     ax.set_yticks(range(len(labels)), labels)
     ax.invert_yaxis()
-    ax.set_xlim(0, 1.12)
+    ax.axvline(1.0, color=INK, lw=1, ls="--")
+    ax.set_xlim(0, right + 0.16)
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v * 100:.0f}¢"))
     ax.grid(axis="y", visible=False)
     ax.legend(ncol=5, loc="lower left", bbox_to_anchor=(0, 1.0), fontsize=8.5)
@@ -309,18 +313,23 @@ def _heatmap(use, save):
     if not h["fys"]:
         return
     import numpy as np
-    data = np.array(h["counts"], dtype=float)
+    data = np.array([[np.nan if v is None else v for v in row] for row in h["counts"]], dtype=float)
     fig, ax = _fig(8, 1.6 + 0.45 * len(h["fys"]))
     im = ax.imshow(data, cmap="Blues", aspect="auto")
     names = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"]
     ax.set_xticks(range(12), names)
     ax.set_yticks(range(len(h["fys"])), [f"FY{f}" for f in h["fys"]])
     ax.grid(False)
-    vmax = data.max() or 1
+    vmax = np.nanmax(data) or 1
     for i in range(data.shape[0]):
         for j in range(12):
+            if np.isnan(data[i, j]):
+                ax.text(j, i, "–", ha="center", va="center", fontsize=8, color=INK2)
+                continue
             ax.text(j, i, int(data[i, j]), ha="center", va="center", fontsize=8,
                     color="white" if data[i, j] > vmax * 0.55 else INK)
+    ax.text(0, -0.12, "– = outside the dates in the export", transform=ax.transAxes, fontsize=8, color=INK2,
+            va="top")
     fig.colorbar(im, ax=ax, fraction=0.025, label="orders")
     ax.set_title("Busy and quiet months: orders placed")
     save(fig, "orders_heatmap", "share", "PPMS Order details")

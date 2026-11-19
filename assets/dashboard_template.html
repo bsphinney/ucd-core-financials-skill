@@ -294,8 +294,8 @@ if(U){
   }
 
   const sH=section("seasonality","Busy and quiet months","Orders placed per month, by fiscal year.");
-  const hm=U.orders_heatmap, mx=Math.max(1,...hm.counts.flat()), names=["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
-  sH.appendChild(el("div",{style:"overflow-x:auto"},`<table class="hm"><tr><th></th>${names.map(n=>`<th>${n}</th>`).join("")}</tr>`+hm.fys.map((fy,i)=>`<tr><th>FY${fy}</th>${hm.counts[i].map(v=>`<td style="background:rgba(61,143,217,${(0.08+0.92*v/mx).toFixed(2)})">${v}</td>`).join("")}</tr>`).join("")+"</table>"));
+  const hm=U.orders_heatmap, mx=Math.max(1,...hm.counts.flat().filter(v=>v!=null)), names=["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
+  sH.appendChild(el("div",{style:"overflow-x:auto"},`<table class="hm"><tr><th></th>${names.map(n=>`<th>${n}</th>`).join("")}</tr>`+hm.fys.map((fy,i)=>`<tr><th>FY${fy}</th>${hm.counts[i].map(v=>v==null?`<td class="note">–</td>`:`<td style="background:rgba(61,143,217,${(0.08+0.92*v/mx).toFixed(2)})">${v}</td>`).join("")}</tr>`).join("")+"</table>"));
 
   const sTg=section("groups","Top lab groups and services","");
   const gG=el("div",{className:"grid g2"});sTg.appendChild(gG);

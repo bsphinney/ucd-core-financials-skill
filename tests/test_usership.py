@@ -100,3 +100,13 @@ def test_turnaround_figure_skipped_when_not_measurable(orders, cfg, tmp_path):
     same["completed"] = same["ordered"] + pd.Timedelta(seconds=30)
     out = render_figures(None, U.compute_usership(same, {}), cfg, tmp_path)
     assert "turnaround" not in out and "backlog" not in out
+
+
+def test_heatmap_blank_after_export_ends(orders):
+    h = U.orders_heatmap(orders)
+    last = orders["ordered"].max()
+    fy_last = h["fys"][-1]
+    row = h["counts"][-1]
+    idx = U.FY_MONTHS.index(last.month)
+    assert all(v is None for v in row[idx + 1:]) and row[idx] is not None
+    assert fy_last == U.fiscal_year(last) if hasattr(U, "fiscal_year") else True
