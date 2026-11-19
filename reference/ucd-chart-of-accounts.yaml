@@ -1,0 +1,27 @@
+# Campus-wide accounting defaults for UC Davis recharge cores (Aggie Enterprise chart of accounts).
+# A core can override any key with `coa_overrides:` in its core-config.yaml.
+assessment_accounts: ["770009", "775004"]   # Central Campus Income Assessment (expense / revenue side)
+contra_accounts: ["445100"]                 # Other Operating Revenues Contra Bad Debts - reported on its own line
+carryforward_accounts: ["300001"]           # Net Position Department Share - excluded from operating figures
+assessment_rate: 0.15                       # assessment as a share of external sales
+external_sales_account: "410000"
+earned_revenue_accounts: ["775000", "410000"]
+revenue_groups:            # ordered; first match wins; last is catch-all
+  - {name: "Internal Recharge (UCD)", accounts: ["775000"]}
+  - {name: "External Sales & Services", accounts: ["410000"]}
+  - {name: "Appropriations / Institutional Support", prefixes: ["775B"]}
+  - {name: "Intercampus Recharge (other UCs)", prefixes: ["785"]}
+  - {name: "Other Revenue", catch_all: true}
+expense_groups:
+  - {name: "Salaries & Wages", prefixes: ["500", "501"], personnel: true}
+  - {name: "Benefits", prefixes: ["508", "505", "506"], personnel: true}
+  - {name: "Lab Supplies & Chemicals", prefixes: ["522", "520"]}
+  - {name: "Services & Repairs", prefixes: ["530", "532", "534"]}
+  - {name: "Equipment", prefixes: ["525"]}
+  - {name: "Freight & Shipping", prefixes: ["539"]}
+  - {name: "Other Operating", catch_all: true}
+per_dollar_buckets:
+  personnel: ["Salaries & Wages", "Benefits"]
+  supplies_services: ["Lab Supplies & Chemicals", "Services & Repairs"]
+  other_operating: ["Equipment", "Freight & Shipping", "Other Operating"]
+uc_domains: [ucdavis.edu, berkeley.edu, ucsf.edu, ucla.edu, uci.edu, ucsd.edu, ucsb.edu, ucsc.edu, ucr.edu, ucmerced.edu, ucop.edu, ucanr.edu, lbl.gov, llnl.gov]
