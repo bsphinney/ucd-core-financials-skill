@@ -19,7 +19,7 @@ ORDERS = _orders([
     ("2", "Ngata Ann", "Ngata, Ann (Vet Med)", "LC-MSMS", "2021-03-01", "2021-03-02", "2021-04-01"),
     ("3", "Quote Only", "Nobody, Nora", "LC-MSMS", "2022-01-01", None, None),
 ])
-CFG = {"core_names": ["Proteomics Core", "Genome Center Proteomics"], "technique_terms": ["mass spectrometry", "proteom*"],
+CFG = {"core_names": ["Proteomics Core", "Genome Center Proteomics"], "other_facilities": ["Metabolomics Center"], "technique_terms": ["mass spectrometry", "proteom*"],
        "institution": "Davis", "years_after": 3, "follow_up_years": 3}
 
 
@@ -38,13 +38,14 @@ def _paper(pid, authors, date="2026-01-05", in_epmc="Y", pubtypes=("research-art
 
 
 class FakeClient:
-    def __init__(self, technique=None, named=None):
-        self.technique, self.named, self.queries = technique or {}, named or {}, []
+    def __init__(self, technique=None, named=None, other=None):
+        self.technique, self.named, self.other, self.queries = technique or {}, named or {}, other or {}, []
 
     def search(self, query):
         self.queries.append(query)
         key = query.split('"')[1]  # the AUTH:"Last F" name
-        table = self.named if " AND (" in query and "Proteomics Core" in query else self.technique
+        table = (self.named if "Proteomics Core" in query else self.other if "Metabolomics Center" in query
+                 else self.technique)
         return table.get(key, [])
 
 
@@ -116,7 +117,8 @@ def test_workbook_sheets(tmp_path):
     path = tmp_path / "publications.xlsx"
     P.write_workbook(rows, P.follow_up(ORDERS, [], CFG, as_of=datetime(2026, 4, 1)), CFG, path)
     xl = pd.ExcelFile(path)
-    assert xl.sheet_names == ["Core not named", "Can't check", "Names the core", "Follow up", "About"]
+    assert xl.sheet_names == ["Core not named", "Can't check", "Names another facility", "Names the core",
+                              "Follow up", "About"]
     assert pd.read_excel(path, "Core not named").iloc[0]["Title"] == "T"
 
 
@@ -150,3 +152,11 @@ def test_cli_publications_runs_with_offline_client(tmp_path, monkeypatch, capsys
     assert cli.main(["publications", str(folder), "--limit", "5"]) == 0
     assert (folder / "out" / "internal" / "publications.xlsx").exists()
     assert "Follow up" in capsys.readouterr().out
+
+
+def test_paper_naming_another_facility_is_not_flagged():
+    davis = lambda pid: _paper(pid, [_author("Okafor", "Grace", "UC Davis")])
+    a, b = davis("20"), davis("21")
+    rows = P.find_papers(ORDERS, CFG, FakeClient(technique={"Okafor G": [a, b]}, named={"Okafor G": [b]},
+                                                 other={"Okafor G": [a, b]}))
+    assert {r["pmid"]: r["status"] for r in rows} == {"20": P.OTHER, "21": P.NAMED}

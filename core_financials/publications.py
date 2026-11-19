@@ -19,14 +19,16 @@ import pandas as pd
 NAMED = "Names the core"
 NOT_NAMED = "Core not named"
 CANT_CHECK = "Can't check: no free full text"
+OTHER = "Names another facility"
 API = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-DEFAULTS = {"core_names": [], "technique_terms": [], "institution": "Davis", "years_after": 3, "follow_up_years": 3}
+DEFAULTS = {"core_names": [], "other_facilities": [], "technique_terms": [], "institution": "Davis", "years_after": 3, "follow_up_years": 3}
 
 
 def settings(raw: dict | None, core_name: str = "") -> dict:
     s = {**DEFAULTS, **(raw or {})}
     s["core_names"] = [str(x) for x in (s["core_names"] or ([core_name] if core_name else []))]
     s["technique_terms"] = [str(x) for x in s["technique_terms"] or []]
+    s["other_facilities"] = [str(x) for x in s["other_facilities"] or []]
     return s
 
 
@@ -90,8 +92,8 @@ def technique_query(last, first, start, end, s) -> str:
     return f"{_base(last, first, start, end)} AND ({terms})"
 
 
-def named_query(last, first, start, end, s) -> str:
-    names = " OR ".join(f'"{n}"' for n in s["core_names"])
+def named_query(last, first, start, end, s, key="core_names") -> str:
+    names = " OR ".join(f'"{n}"' for n in s[key])
     return f"{technique_query(last, first, start, end, s)} AND ({names})"
 
 
@@ -144,6 +146,8 @@ def find_papers(orders: pd.DataFrame, s: dict, client, progress=None) -> list[di
         if not keep:
             continue
         named_ids = {x.get("id") for x in client.search(named_query(*args, s))} if s["core_names"] else set()
+        other_ids = ({x.get("id") for x in client.search(named_query(*args, s, "other_facilities"))}
+                     if s["other_facilities"] else set())
         for paper in keep:
             key = (person["group"], paper.get("id"))
             who = f"{person['last']} {person['first'][:1]} ({person['role']})"
@@ -153,7 +157,8 @@ def find_papers(orders: pd.DataFrame, s: dict, client, progress=None) -> list[di
                 if paper.get("id") in named_ids:
                     found[key]["status"] = NAMED
                 continue
-            status = NAMED if paper.get("id") in named_ids else (NOT_NAMED if paper.get("inEPMC") == "Y" else CANT_CHECK)
+            status = (NAMED if paper.get("id") in named_ids else OTHER if paper.get("id") in other_ids
+                      else NOT_NAMED if paper.get("inEPMC") == "Y" else CANT_CHECK)
             g = orders[(orders["group"] == person["group"]) & orders["is_revenue"]]
             pid = paper.get("pmid") or paper.get("id")
             src = paper.get("source", "MED")
@@ -210,13 +215,16 @@ def write_workbook(rows, fu: pd.DataFrame, s: dict, path) -> None:
         f"'{NOT_NAMED}': the full text is in Europe PMC and contains none of those names. The lab may have "
         "used another facility; check before contacting them.",
         f"'{CANT_CHECK}': only the abstract is free to search. Read the paper.",
+        f"'{OTHER}': names one of {', '.join(s['other_facilities']) or '(none set)'} and not this core; the lab "
+        "probably used that facility.",
         f"Follow up: labs with orders in the last {s['follow_up_years']} years of the export and no matching "
         "paper since their last order.",
         "Source: Europe PMC (europepmc.org), which includes all of PubMed. Contains lab and person names: "
         "keep inside the core.",
         f"Built {date.today():%Y-%m-%d}."]})
     with pd.ExcelWriter(path, engine="openpyxl") as xw:
-        for sheet, st in [("Core not named", NOT_NAMED), ("Can't check", CANT_CHECK), ("Names the core", NAMED)]:
+        for sheet, st in [("Core not named", NOT_NAMED), ("Can't check", CANT_CHECK),
+                          ("Names another facility", OTHER), ("Names the core", NAMED)]:
             df[df["status"] == st][list(COLS)].rename(columns=COLS).to_excel(xw, sheet_name=sheet, index=False)
         fu.rename(columns={"group": "Lab (PPMS group)", "submitters": "Submitters", "first_order": "First order",
                            "last_order": "Last order", "services": "Services",

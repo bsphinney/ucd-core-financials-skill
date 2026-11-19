@@ -149,10 +149,11 @@ def _publications(folder: Path, limit=None) -> int:
     fu = P.follow_up(orders, rows, s)
     path = out / "publications.xlsx"
     P.write_workbook(rows, fu, s, path)
-    n = {st: sum(r["status"] == st for r in rows) for st in (P.NAMED, P.NOT_NAMED, P.CANT_CHECK)}
+    n = {st: sum(r["status"] == st for r in rows) for st in (P.NAMED, P.NOT_NAMED, P.CANT_CHECK, P.OTHER)}
     checkable = n[P.NAMED] + n[P.NOT_NAMED]
     print(f"\n{len(rows)} papers may use the core's data:")
-    print(f"  {n[P.NAMED]} name the core, {n[P.NOT_NAMED]} don't, {n[P.CANT_CHECK]} can't be checked (no free full text)")
+    print(f"  {n[P.NAMED]} name the core, {n[P.NOT_NAMED]} don't, {n[P.CANT_CHECK]} can't be checked (no free full text), "
+          f"{n[P.OTHER]} name another facility")
     if checkable:
         print(f"  Of the papers that could be checked, {n[P.NAMED] / checkable:.0%} name the core.")
     print(f"  Follow up: {len(fu)} labs with recent orders and no paper yet.")

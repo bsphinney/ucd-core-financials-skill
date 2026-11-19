@@ -53,6 +53,7 @@ Used only by `run.py publications`.
 | Key | Default | Meaning |
 |---|---|---|
 | `core_names` | `[core_name]` | Every name the core has gone by, and staff surnames people thank. A paper "names the core" if any appears in its record or full text. |
+| `other_facilities` | `[]` | Facilities offering similar services. A paper naming one of them and not this core is listed under "Names another facility" instead of being flagged. |
 | `technique_terms` | none (required) | Words a methods section uses when your service was used. `*` is a wildcard: `"proteom*"`. |
 | `institution` | `"Davis"` | The matched author's affiliation must contain this, unless the PI and a submitter are both authors. |
 | `years_after` | `3` | How long after a lab's last order a paper still counts. |

@@ -120,7 +120,8 @@ coa_overrides: {{}}
 # For `run.py publications` (goes online: sends author names to Europe PMC). Every name the core has
 # gone by, and words that appear in a methods section when the core's service was used.
 publications:
-  core_names: ["{core_name}"]
+  core_names: ["{core_name}"]   # add old names and the surnames of staff people thank
+  other_facilities: []    # facilities offering similar services, e.g. ["West Coast Metabolomics Center"]
   technique_terms: []     # e.g. ["mass spectrometry", "proteom*", "LC-MS/MS"] or ["confocal", "light-sheet"]
   institution: "Davis"
   years_after: 3          # how long after a lab's last order a paper still counts

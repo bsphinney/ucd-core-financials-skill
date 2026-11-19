@@ -138,6 +138,8 @@ running it. Never run it as part of `build`.
 
 First fill in `publications:` in `core-config.yaml` with the user:
 - `core_names`: every name the core has gone by, plus staff surnames people thank.
+- `other_facilities`: other facilities offering similar services. A paper naming one of
+  them (and not this core) goes to "Names another facility", not the flag list.
 - `technique_terms`: words a methods section uses when the service was used
   (`"mass spectrometry"`, `"proteom*"`; `"confocal"`, `"light-sheet"`).
 
