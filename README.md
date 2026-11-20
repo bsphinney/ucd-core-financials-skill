@@ -67,7 +67,8 @@ python run.py build sample_data/example_core
 ## Privacy
 
 - Everything runs locally on files you export. The one exception is `run.py publications`,
-  which sends PI and submitter names to Europe PMC's public search. `build` never does.
+  which sends PI and submitter names to Europe PMC's public search and PI names to Crossref's.
+  `build` never does.
 - `out/share/` and `benchmark.csv` contain percentages, ratios, counts and days only:
   no dollar amounts, no lab, PI or person names.
 - `dashboard.html`, `out/internal/` (including `publications.xlsx`), `usership.xlsx` and `facts.json` contain dollar

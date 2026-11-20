@@ -118,7 +118,7 @@ def test_workbook_sheets(tmp_path):
     P.write_workbook(rows, P.follow_up(ORDERS, [], CFG, as_of=datetime(2026, 4, 1)), CFG, path)
     xl = pd.ExcelFile(path)
     assert xl.sheet_names == ["Core not named", "Can't check", "Names another facility", "Names the core",
-                              "Follow up", "About"]
+                              "Not in PubMed", "Follow up", "About"]
     assert pd.read_excel(path, "Core not named").iloc[0]["Title"] == "T"
 
 
@@ -274,7 +274,131 @@ def test_cli_excerpts_writes_batches(tmp_path, monkeypatch, sample):
     paper = _paper("50", [_author("Okafor", "Grace", "UC Davis")])
     monkeypatch.setattr(P, "EuropePMC", lambda *a, **k: FakeClient())
     monkeypatch.setattr(P, "find_papers", lambda *a, **k: [_row("50")])
+    monkeypatch.setattr(P, "Crossref", lambda *a, **k: FakeCrossref({}))
     monkeypatch.setattr(fulltext, "excerpts_for", lambda paper, *a, **k: {**paper, "ms_paragraphs": ["x"], "source": "test"})
     assert cli.main(["publications", str(folder), "--excerpts"]) == 0
     b = json.loads((folder / "out" / "internal" / "paper_review" / "batch1.json").read_text())
     assert b[0]["pmid"] == "50" and b[0]["ms_paragraphs"] == ["x"]
+
+
+# ---------- papers outside PubMed (Crossref) ----------
+
+def _cr_item(doi, authors, date=(2026, 2, 1), title="Hydrogel wound study", aff=None, kind="journal-article"):
+    return {"DOI": doi, "type": kind, "title": [title], "container-title": ["Smart Mater Med"],
+            "issued": {"date-parts": [list(date)]},
+            "author": [{"family": f, "given": g, "affiliation": [{"name": aff}] if aff else []} for f, g in authors]}
+
+
+def test_crossref_item_becomes_a_paper_record():
+    p = P.crossref_paper(_cr_item("10.1/X", [("Okafor", "Grace"), ("Lindqvist", "Mira")], aff="UC Davis"))
+    assert p["doi"] == "10.1/X" and p["firstPublicationDate"] == "2026-02-01" and p["source"] == "CR"
+    assert P._is(p["authorList"]["author"][0], "Okafor", "Grace")
+    assert "Davis" in P._affs(p["authorList"]["author"][0])
+
+
+class FakeCrossref:
+    def __init__(self, items):
+        self.items, self.queries = items, []
+
+    def search(self, names, start, end):
+        self.queries.append(tuple(names))
+        return [P.crossref_paper(i) for i in self.items.get(names[0][0], [])]
+
+
+class FakeEPMC:
+    def __init__(self, known):
+        self.known = known
+
+    def search(self, query):
+        return [{"doi": d} for d in self.known if d.casefold() in query.casefold()]
+
+
+def test_papers_outside_pubmed_are_added_for_review():
+    items = {"Okafor": [
+        _cr_item("10.1/both", [("Okafor", "Grace"), ("Lindqvist", "Mira")]),       # PI + submitter: kept
+        _cr_item("10.1/pi-only", [("Okafor", "Grace"), ("Smith", "Jo")]),          # PI alone, no Davis: dropped
+        _cr_item("10.1/in-pubmed", [("Okafor", "Grace"), ("Lindqvist", "Mira")]),  # Europe PMC has it: dropped
+        _cr_item("10.1/old", [("Okafor", "Grace"), ("Lindqvist", "Mira")], date=(2019, 1, 1)),  # before orders
+    ]}
+    cr = FakeCrossref(items)
+    rows = P.find_outside_pubmed(ORDERS, P.settings(CFG), cr, FakeEPMC(["10.1/in-pubmed"]), [])
+    assert [r["doi"] for r in rows] == ["10.1/both"]
+    assert ("Okafor", "Grace") in cr.queries[0] and ("Lindqvist", "Mira") in cr.queries[0]  # PI with submitter
+    assert rows[0]["status"] == P.OUTSIDE and rows[0]["link"] == "https://doi.org/10.1/both"
+    assert P.review_records(rows)[0]["doi"] == "10.1/both"
+
+
+def test_papers_already_found_are_not_repeated():
+    items = {"Okafor": [_cr_item("10.1/both", [("Okafor", "Grace"), ("Lindqvist", "Mira")])]}
+    found = [{"group": "Okafor, Grace", "doi": "10.1/BOTH", "title": "x"}]
+    assert P.find_outside_pubmed(ORDERS, P.settings(CFG), FakeCrossref(items), FakeEPMC([]), found) == []
+
+
+def test_workbook_has_outside_pubmed_sheet(tmp_path):
+    rows = [{"group": "Okafor, Grace", "matched": "Okafor G (PI)", "date": "2026-02-01", "title": "T", "journal": "J",
+             "pmid": "", "pmcid": "", "doi": "10.1/a", "link": "https://doi.org/10.1/a", "status": P.OUTSIDE,
+             "lab_orders": "x", "preprint": False}]
+    path = tmp_path / "p.xlsx"
+    P.write_workbook(rows, P.follow_up(ORDERS, rows, P.settings(CFG)), P.settings(CFG), path)
+    assert len(pd.read_excel(path, "Not in PubMed")) == 1
+
+
+def test_cli_excerpts_keeps_earlier_verdicts(tmp_path, monkeypatch, sample):
+    import shutil, json
+    from core_financials import cli, fulltext
+    folder = tmp_path / "core"
+    shutil.copytree("sample_data/example_core", folder, ignore=shutil.ignore_patterns("out"))
+    monkeypatch.setattr(P, "EuropePMC", lambda *a, **k: FakeClient())
+    monkeypatch.setattr(P, "Crossref", lambda *a, **k: FakeCrossref({}))
+    monkeypatch.setattr(fulltext, "excerpts_for", lambda paper, *a, **k: {**paper, "ms_paragraphs": ["x"],
+                                                                          "n_ms_paragraphs": 1, "source": "t"})
+    rows = [_row("50")]
+    monkeypatch.setattr(P, "find_papers", lambda *a, **k: list(rows))
+    assert cli.main(["publications", str(folder), "--excerpts"]) == 0
+    rd = folder / "out" / "internal" / "paper_review"
+    (rd / "verdict1.json").write_text(json.dumps([{"n": 1, "verdict": "likely_core", "confidence": "high",
+                                                   "where": "w", "evidence": "e", "action": "Ask the lab"}]))
+    rows.append(_row("51"))  # a new paper turns up on the next run
+    assert cli.main(["publications", str(folder), "--excerpts"]) == 0
+    assert [r["pmid"] for r in json.loads((rd / "batch1.json").read_text())] == ["51"]  # only the new one
+    assert P.load_review(rd)["50"]["verdict"] == "likely_core"  # the earlier verdict survives
+
+
+def test_outside_pubmed_paper_without_technique_words_is_closed_automatically(tmp_path, monkeypatch, sample):
+    import shutil
+    from core_financials import cli, fulltext
+    folder = tmp_path / "core"
+    shutil.copytree("sample_data/example_core", folder, ignore=shutil.ignore_patterns("out"))
+    out = {**_row("x"), "pmid": "", "pmcid": "", "doi": "10.1/none", "status": P.OUTSIDE}
+    monkeypatch.setattr(P, "EuropePMC", lambda *a, **k: FakeClient())
+    monkeypatch.setattr(P, "find_papers", lambda *a, **k: [])
+    monkeypatch.setattr(P, "Crossref", lambda *a, **k: FakeCrossref({}))
+    monkeypatch.setattr(P, "find_outside_pubmed", lambda *a, **k: [out])
+    monkeypatch.setattr(fulltext, "excerpts_for", lambda paper, *a, **k: {**paper, "ms_paragraphs": [],
+                                                                          "n_ms_paragraphs": 0, "source": "t"})
+    assert cli.main(["publications", str(folder), "--excerpts"]) == 0
+    v = P.load_review(folder / "out" / "internal" / "paper_review")
+    assert v["10.1/none"]["verdict"] == "no_new_proteomics"
+
+
+def test_meeting_abstracts_in_indexed_journals_are_skipped():
+    items = {"Okafor": [
+        _cr_item("10.1/abs", [("Okafor", "Grace"), ("Lindqvist", "Mira")], date=(2025, 9, 1)),
+        _cr_item("10.1/new", [("Okafor", "Grace"), ("Lindqvist", "Mira")], date=(2026, 11, 1)),
+    ]}
+    rows = P.find_outside_pubmed(ORDERS, P.settings(CFG), FakeCrossref(items), FakeEPMC([]), [],
+                                 indexed_journals={"smart mater med"}, today=datetime(2026, 11, 19).date())
+    assert [r["doi"] for r in rows] == ["10.1/new"]  # an old item in an indexed journal is a meeting abstract
+
+
+def test_journal_names_match_across_spellings():
+    k = P._journal_key
+    assert k("The Journal of biological chemistry") == k("Journal of Biological Chemistry")
+    assert k("Journal of the American Society of Nephrology : JASN") == k("Journal of the American Society of Nephrology")
+    assert k("Alzheimer's &amp; Dementia") == k("Alzheimer's & dementia : the journal of the Alzheimer's Association")
+
+
+def test_unchecked_outside_papers_do_not_take_a_lab_off_follow_up():
+    out = {**_row("x"), "date": "2026-03-01", "status": P.OUTSIDE}
+    fu = P.follow_up(ORDERS, [out], P.settings(CFG), as_of=datetime(2026, 4, 1))
+    assert "Okafor, Grace" in set(fu["group"])

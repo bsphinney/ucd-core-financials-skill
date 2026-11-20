@@ -136,7 +136,8 @@ def _publications(folder: Path, limit=None, excerpts=False) -> int:
         orders = orders[orders["group"].isin(keep)]
     out = folder / "out" / "internal"
     client = P.EuropePMC(out / "publications_cache.json")
-    print("Searching Europe PMC (includes all of PubMed). Author names are sent to europepmc.org.")
+    print("Searching Europe PMC (includes all of PubMed) and Crossref (journals PubMed doesn't index). "
+          "Author names are sent to europepmc.org and api.crossref.org.")
 
     def progress(i, n, person):
         if i % 50 == 0:
@@ -144,9 +145,16 @@ def _publications(folder: Path, limit=None, excerpts=False) -> int:
     failed = []
     try:
         rows = P.find_papers(orders, s, client, progress, failed)
+        cr = P.Crossref(out / "crossref_cache.json")
+        if hasattr(cr, "prefetch"):
+            cr.prefetch(P.crossref_pairs(orders, s))
+        journals = {(((x.get("journalInfo") or {}).get("journal") or {}).get("title") or "")
+                    for hits in getattr(client, "cache", {}).values() for x in hits}
+        rows += P.find_outside_pubmed(orders, s, cr, client, rows, failed=failed, indexed_journals=journals - {""})
     finally:
-        if hasattr(client, "save"):
-            client.save()
+        for c in (client, locals().get("cr")):
+            if hasattr(c, "save"):
+                c.save()
     fu = P.follow_up(orders, rows, s)
     review_dir = out / "paper_review"
     if excerpts:
@@ -154,13 +162,16 @@ def _publications(folder: Path, limit=None, excerpts=False) -> int:
     verdicts = P.load_review(review_dir)
     path = out / "publications.xlsx"
     P.write_workbook(rows, fu, s, path, verdicts=verdicts or None)
-    n = {st: sum(r["status"] == st for r in rows) for st in (P.NAMED, P.NOT_NAMED, P.CANT_CHECK, P.OTHER)}
+    n = {st: sum(r["status"] == st for r in rows) for st in (P.NAMED, P.NOT_NAMED, P.CANT_CHECK, P.OTHER, P.OUTSIDE)}
     checkable = n[P.NAMED] + n[P.NOT_NAMED]
-    print(f"\n{len(rows)} papers may use the core's data:")
+    print(f"\n{len(rows) - n[P.OUTSIDE]} papers may use the core's data:")
     print(f"  {n[P.NAMED]} name the core, {n[P.NOT_NAMED]} don't, {n[P.CANT_CHECK]} can't be checked (no free full text), "
           f"{n[P.OTHER]} name another facility")
     if checkable:
         print(f"  Of the papers that could be checked, {n[P.NAMED] / checkable:.0%} name the core.")
+    if n[P.OUTSIDE]:
+        print(f"  Plus {n[P.OUTSIDE]} papers by customer labs that PubMed doesn't have (sheet 'Not in PubMed'); "
+              "their methods can't be searched, so run --excerpts to read them.")
     print(f"  Follow up: {len(fu)} labs with recent orders and no paper yet.")
     if failed:
         print(f"  {len(failed)} people could not be searched; run again to retry them (results are cached).")
@@ -179,24 +190,36 @@ def _write_excerpts(P, rows, s, client, review_dir: Path) -> None:
     import json
     from concurrent.futures import ThreadPoolExecutor
     from . import fulltext as T
-    recs = P.review_records(rows)
-    for r in recs:  # papers found before DOIs were cached: look the DOI up once
-        if not r["doi"] and r["pmid"] and not r["pmcid"]:
-            hit = client.search(f"EXT_ID:{r['pmid']} AND SRC:MED")
+    import re
+    reviewed = P.keep_review(review_dir)  # earlier rounds' verdicts are kept; only new papers are read
+    recs = [r for r in P.review_records(rows) if r["key"] not in reviewed]
+    for i, r in enumerate(recs, 1):
+        r["n"] = i
+        ppr = re.search(r"/PPR/(PPR\d+)", r.get("link", ""))
+        if not r["doi"] and ((r["pmid"] and not r["pmcid"]) or ppr):  # look the DOI up once
+            hit = client.search(f"EXT_ID:{ppr.group(1)} AND SRC:PPR" if ppr else f"EXT_ID:{r['pmid']} AND SRC:MED")
             r["doi"] = (hit[0].get("doi") if hit else "") or ""
     ms = T.terms_regex(s["technique_terms"] + s.get("technique_also", []))
-    print(f"\nReading the full text of {len(recs)} papers (flagged, other facility, can't check)...", flush=True)
+    print(f"\nReading the full text of {len(recs)} papers not reviewed yet (flagged, other facility, can't check, "
+          f"not in PubMed); {len(reviewed)} reviewed earlier are kept...", flush=True)
     with ThreadPoolExecutor(4) as ex:
         done = list(ex.map(lambda r: T.excerpts_for(r, s["institution"], s["core_names"], ms=ms), recs))
-    readable = [r for r in done if "error" not in r]
+    auto = {r["key"]: {"verdict": "no_new_proteomics", "confidence": "medium", "where": "-",
+                       "evidence": "Full text found; it never mentions the core's techniques.", "action": "No action"}
+            for r in done if r["status"] == P.OUTSIDE and "error" not in r and not r.get("n_ms_paragraphs")}
+    readable = [r for r in done if "error" not in r and r["key"] not in auto]
     library = [r for r in done if "error" in r]
     review_dir.mkdir(parents=True, exist_ok=True)
     for old in review_dir.glob("verdict*.json"):
         old.unlink()
+    P.keep_review(review_dir, auto)
+    (review_dir / "index.json").unlink(missing_ok=True)
     paths = T.write_batches(readable, review_dir)
     (review_dir / "index.json").write_text(json.dumps({r["n"]: r["key"] for r in done}))
     (review_dir / "read_in_library.json").write_text(json.dumps(library, ensure_ascii=False, indent=1))
-    print(f"  {len(readable)} readable, in {len(paths)} batch files in {review_dir}")
+    print(f"  {len(readable)} to review, in {len(paths)} batch files in {review_dir}")
+    if auto:
+        print(f"  {len(auto)} papers outside PubMed never mention the core's techniques: closed automatically")
     print(f"  {len(library)} have no free full text: listed in read_in_library.json for someone with library access")
     print("  Next: review each batch (reference/paper-review.md), then run this command again without --excerpts.")
 

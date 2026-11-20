@@ -133,7 +133,8 @@ Comparisons use the most recent fiscal year that every core has complete.
 
 Finds papers by the core's customers that may use the core's data and checks whether each
 names the core. **This is the only step that goes online**: it sends PI and submitter names
-to Europe PMC (which holds all of PubMed plus open-access and NIH full text). Ask before
+to Europe PMC (which holds all of PubMed plus open-access and NIH full text), and PI names
+to Crossref (for journals PubMed doesn't index, and papers too new to be indexed). Ask before
 running it. Never run it as part of `build`.
 
 First fill in `publications:` in `core-config.yaml` with the user:
@@ -155,17 +156,21 @@ Writes `out/internal/publications.xlsx`:
 - **Core not named**: full text checked, none of the names found.
 - **Can't check**: only the abstract is free. Someone must read the paper.
 - **Names the core**: for annual and RCCI reports.
+- **Not in PubMed**: papers by the PI with a submitter (or at the institution) that only
+  Crossref has. Their methods can't be searched, so `--excerpts` reads them; one whose full
+  text never mentions the core's techniques is closed automatically.
 - **Follow up**: labs with recent orders and no paper yet.
 
 **Then read the flagged papers in full.** Run it again with `--excerpts`: it fetches each
-flagged, other-facility and can't-check paper's full text (Europe PMC, PubMed Central, then
+flagged, other-facility, can't-check and not-in-PubMed paper's full text (Europe PMC, PubMed Central, then
 free preprint or repository copies) and writes the passages that say where the work was done
 to `out/internal/paper_review/batch*.json`. Review every batch as
 [reference/paper-review.md](reference/paper-review.md) describes (one reviewer agent per batch,
 in parallel), then run `run.py publications <folder>` once more: the verdicts go into the
 workbook, with an "Ask the lab" sheet of papers that most likely used the core's data without
 crediting it. Papers with no free full text are listed in `read_in_library.json`; publisher
-sites block automated reading, so never try to get past their bot checks. Add any new core
+sites block automated reading, so never try to get past their bot checks. Verdicts are kept
+between runs (`reviewed.json`): a later `--excerpts` run only reads papers not reviewed yet. Add any new core
 wording the reviewers found (old names, staff) to `core_names` and re-run.
 
 When you report back, say "core not named", never "did not acknowledge": the lab may have

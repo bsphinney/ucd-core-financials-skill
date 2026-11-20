@@ -6,6 +6,7 @@ never run by `build`.
 """
 from __future__ import annotations
 
+import html
 import json
 import re
 import time
@@ -20,6 +21,7 @@ NAMED = "Names the core"
 NOT_NAMED = "Core not named"
 CANT_CHECK = "Can't check: no free full text"
 OTHER = "Names another facility"
+OUTSIDE = "Not in PubMed: check the methods"
 API = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 DEFAULTS = {"core_names": [], "other_facilities": [], "technique_terms": [], "technique_also": [], "institution": "Davis", "years_after": 3, "follow_up_years": 3}
 
@@ -159,7 +161,7 @@ def _keep(paper, person, lab_people, s):
     return any(_is(a, q["last"], q["first"]) for q in others for a in _authors(paper) if not any(a is m for m in me))
 
 
-RANK = {NAMED: 3, OTHER: 2, NOT_NAMED: 1, CANT_CHECK: 0}
+RANK = {NAMED: 3, OTHER: 2, NOT_NAMED: 1, CANT_CHECK: 0, OUTSIDE: -1}
 
 
 def _safe(client, query, who, failed):
@@ -225,6 +227,99 @@ def find_papers(orders: pd.DataFrame, s: dict, client, progress=None, failed=Non
     return sorted(found.values(), key=lambda r: (r["group"].casefold(), r["date"]))
 
 
+# ---------- papers outside PubMed (Crossref) ----------
+
+def crossref_paper(item: dict) -> dict:
+    """A Crossref work in the shape the matching code reads (Europe PMC's)."""
+    parts = ((item.get("issued") or item.get("published") or {}).get("date-parts") or [[]])[0] or []
+    when = "-".join(f"{int(x):02d}" for x in (list(parts) + [1, 1])[:3]) if parts else ""
+    authors = [{"lastName": a.get("family", ""), "firstName": a.get("given", ""),
+                "initials": (a.get("given") or " ")[0],
+                "authorAffiliationDetailsList": {"authorAffiliation": [
+                    {"affiliation": str(x.get("name", ""))[:300]} for x in (a.get("affiliation") or [])[:6]]}}
+               for a in item.get("author") or []]
+    kind = str(item.get("type", ""))
+    return {"id": item.get("DOI", ""), "source": "CR", "doi": item.get("DOI", ""),
+            "title": re.sub(r"<[^>]+>", "", " ".join(item.get("title") or [])), "firstPublicationDate": when,
+            "inEPMC": "N", "pubTypeList": {"pubType": ["review" if "review" in kind else kind]},
+            "journalInfo": {"journal": {"title": " ".join(item.get("container-title") or [])}},
+            "authorList": {"author": authors}}
+
+
+SKIP_TYPES = {"peer-review", "component", "dataset", "posted-content", "grant", "book", "book-set"}
+
+
+def crossref_pairs(orders: pd.DataFrame, s: dict) -> list[tuple[dict, dict]]:
+    """(PI, submitter) for every submitter: Crossref's author search is fuzzy, so both names go in one query
+    and only papers with both as authors are kept."""
+    people = people_from_orders(orders, s)
+    pi = {p["group"]: p for p in people if p["role"] == "PI"}
+    return [(pi[p["group"]], p) for p in people if p["role"] == "submitter" and p["group"] in pi]
+
+
+def _journal_key(t):
+    """Journal names as Crossref and Europe PMC both spell them: no leading 'The', nothing after ':'."""
+    t = html.unescape(str(t)).split(":")[0]
+    t = re.sub(r"\W+", " ", t).strip().casefold()
+    return re.sub(r"^the ", "", t)
+
+
+def find_outside_pubmed(orders: pd.DataFrame, s: dict, crossref, epmc, found: list[dict], progress=None,
+                        failed=None, indexed_journals=(), today=None) -> list[dict]:
+    """Papers by a lab's PI and a submitter together that Europe PMC doesn't have: journals PubMed doesn't
+    index, and papers too new to be indexed. Their methods can't be searched, so they go to the full-text
+    step. Items in journals Europe PMC does index, older than 90 days, are meeting abstracts: left out."""
+    people = people_from_orders(orders, s)
+    lab = {}
+    for p in people:
+        lab.setdefault(p["group"], []).append(p)
+    indexed = {_journal_key(j) for j in indexed_journals}
+    recent = f"{(today or date.today()) - timedelta(days=90):%Y-%m-%d}"
+    seen = {str(r.get("doi") or "").casefold() for r in found if r.get("doi")}
+    cands = {}  # doi -> (person, paper)
+    pairs = crossref_pairs(orders, s)
+    for i, (pi, sub) in enumerate(pairs):
+        if progress:
+            progress(i, len(pairs), sub)
+        try:
+            papers = crossref.search([(pi["last"], pi["first"]), (sub["last"], sub["first"])], sub["start"], sub["end"])
+        except Exception as e:
+            if failed is not None:
+                failed.append(f"{sub['last']} {sub['first']} (Crossref)")
+            print(f"  Crossref search failed for {sub['group']}: {str(e)[:80]}", flush=True)
+            continue
+        for paper in papers:
+            doi = str(paper.get("doi") or "").casefold()
+            kind = (paper.get("pubTypeList") or {}).get("pubType", [""])[0]
+            if not doi or doi in seen or doi in cands or kind in SKIP_TYPES:
+                continue
+            if _journal_key(paper["journalInfo"]["journal"]["title"]) in indexed and \
+                    paper["firstPublicationDate"] < recent:
+                continue
+            if _keep(paper, sub, lab[sub["group"]], s):
+                cands[doi] = (sub, paper)
+    known = set()  # DOIs Europe PMC has: the technique search already judged them
+    dois = list(cands)
+    for i in range(0, len(dois), 20):
+        q = " OR ".join(f'DOI:"{d}"' for d in dois[i:i + 20])
+        try:
+            known |= {str(x.get("doi") or "").casefold() for x in epmc.search(q)}
+        except Exception:
+            known |= set(dois[i:i + 20])  # unsure: leave them out rather than list papers twice
+    rows = []
+    for doi, (person, paper) in cands.items():
+        if doi in known:
+            continue
+        g = orders[(orders["group"] == person["group"]) & orders["is_revenue"]]
+        rows.append({"group": person["group"], "matched": f"{person['last']} {person['first'][:1]} (submitter, with PI)",
+                     "date": paper["firstPublicationDate"], "title": paper["title"],
+                     "journal": paper["journalInfo"]["journal"]["title"], "pmid": "", "pmcid": "",
+                     "doi": paper["doi"], "link": f"https://doi.org/{paper['doi']}", "status": OUTSIDE,
+                     "lab_orders": f"{g['ordered'].min():%Y-%m-%d} → {g['ordered'].max():%Y-%m-%d}",
+                     "preprint": False})
+    return sorted(rows, key=lambda r: (r["group"].casefold(), r["date"]))
+
+
 def follow_up(orders: pd.DataFrame, rows: list[dict], s: dict, as_of=None) -> pd.DataFrame:
     o = orders[orders["is_revenue"]]
     as_of = pd.Timestamp(as_of or o["ordered"].max())
@@ -234,27 +329,28 @@ def follow_up(orders: pd.DataFrame, rows: list[dict], s: dict, as_of=None) -> pd
         last = g["ordered"].max()
         if last < cutoff:
             continue
-        later = [r for r in rows if r["group"] == group and str(r["date"]) >= f"{last:%Y-%m-%d}"]
+        later = [r for r in rows if r["group"] == group and str(r["date"]) >= f"{last:%Y-%m-%d}"
+                 and r["status"] != OUTSIDE]  # unchecked papers outside PubMed don't count until read
         if later:
             continue
         out.append({"group": group, "submitters": "; ".join(sorted(set(g["user"]) - {""})),
                     "first_order": f"{g['ordered'].min():%Y-%m-%d}", "last_order": f"{last:%Y-%m-%d}",
                     "services": "; ".join(g["service"].value_counts().index[:4]),
-                    "papers_before": sum(r["group"] == group for r in rows)})
+                    "papers_before": sum(r["group"] == group and r["status"] != OUTSIDE for r in rows)})
     cols = ["group", "submitters", "first_order", "last_order", "services", "papers_before"]
     return pd.DataFrame(out, columns=cols).sort_values("last_order", ascending=False).reset_index(drop=True)
 
 
 # ---------- full-text review ----------
 
-REVIEW_STATUSES = (NOT_NAMED, OTHER, CANT_CHECK)
+REVIEW_STATUSES = (NOT_NAMED, OTHER, CANT_CHECK, OUTSIDE)
 REVIEW_COLS = {"verdict": "Review", "confidence": "Confidence", "where": "Where the work was done",
                "evidence": "Evidence", "action": "Action"}
 
 
 def row_key(r: dict) -> str:
     """One key per paper, shared by every lab it was found under."""
-    return str(r.get("pmid") or r.get("pmcid") or re.sub(r"\W+", " ", str(r.get("title", ""))).strip().casefold())
+    return str(r.get("pmid") or r.get("pmcid") or str(r.get("doi") or "").casefold() or re.sub(r"\W+", " ", str(r.get("title", ""))).strip().casefold())
 
 
 def review_records(rows: list[dict]) -> list[dict]:
@@ -270,7 +366,8 @@ def review_records(rows: list[dict]) -> list[dict]:
             continue
         recs[k] = {"key": k, "lab": r["group"], "matched": r["matched"], "date": r["date"], "title": r["title"],
                    "journal": r["journal"], "pmid": r.get("pmid", ""), "pmcid": r.get("pmcid", ""),
-                   "doi": r.get("doi", ""), "lab_orders": r["lab_orders"], "status": r["status"]}
+                   "doi": r.get("doi", ""), "link": r.get("link", ""), "lab_orders": r["lab_orders"],
+                   "status": r["status"]}
     out = list(recs.values())
     for i, r in enumerate(out, 1):
         r["n"] = i
@@ -278,14 +375,27 @@ def review_records(rows: list[dict]) -> list[dict]:
 
 
 def load_review(folder) -> dict:
-    """Verdicts keyed by paper, from paper_review/index.json and the reviewers' verdict*.json files."""
+    """Verdicts keyed by paper: earlier rounds (reviewed.json) plus the current round's verdict*.json files,
+    numbered through index.json."""
     from .fulltext import load_verdicts
     folder = Path(folder)
+    out = json.loads((folder / "reviewed.json").read_text()) if (folder / "reviewed.json").exists() else {}
     idx = folder / "index.json"
-    if not idx.exists():
-        return {}
-    keys = {int(k): v for k, v in json.loads(idx.read_text()).items()}
-    return {keys[n]: v for n, v in load_verdicts(folder).items() if n in keys}
+    if idx.exists():
+        keys = {int(k): v for k, v in json.loads(idx.read_text()).items()}
+        out.update({keys[n]: v for n, v in load_verdicts(folder).items() if n in keys})
+    return out
+
+
+def keep_review(folder, extra: dict | None = None) -> dict:
+    """Fold the current round's verdicts (and any extra ones) into reviewed.json, so a new round of
+    --excerpts never loses them. Returns everything reviewed so far."""
+    folder = Path(folder)
+    done = {**load_review(folder), **(extra or {})}
+    if done:
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "reviewed.json").write_text(json.dumps(done, ensure_ascii=False, indent=1))
+    return done
 
 
 # ---------- output ----------
@@ -315,11 +425,14 @@ def write_workbook(rows, fu: pd.DataFrame, s: dict, path, verdicts: dict | None 
         f"'{NOT_NAMED}': the full text is in Europe PMC and contains none of those names. The lab may have "
         "used another facility; check before contacting them.",
         f"'{CANT_CHECK}': only the abstract is free to search. Read the paper.",
+        f"'{OUTSIDE}': a paper by the lab's PI and a submitter (or at {s['institution']}) in a journal "
+        "PubMed doesn't index, or too new to be indexed, found through Crossref. Its methods can't be searched, "
+        "so it may have nothing to do with the core: read it.",
         f"'{OTHER}': names one of {', '.join(s['other_facilities']) or '(none set)'} and not this core; the lab "
         "probably used that facility.",
         f"Follow up: labs with orders in the last {s['follow_up_years']} years of the export and no matching "
         "paper since their last order.",
-        "Source: Europe PMC (europepmc.org), which includes all of PubMed. Contains lab and person names: "
+        "Sources: Europe PMC (europepmc.org), which includes all of PubMed, and Crossref (crossref.org). Contains lab and person names: "
         "keep inside the core.",
         f"Built {date.today():%Y-%m-%d}."]})
     with pd.ExcelWriter(path, engine="openpyxl") as xw:
@@ -327,7 +440,8 @@ def write_workbook(rows, fu: pd.DataFrame, s: dict, path, verdicts: dict | None 
             ask = df[df["action"].str.startswith("Ask")].drop_duplicates("title")
             ask[list(cols)].rename(columns=cols).to_excel(xw, sheet_name="Ask the lab", index=False)
         for sheet, st in [("Core not named", NOT_NAMED), ("Can't check", CANT_CHECK),
-                          ("Names another facility", OTHER), ("Names the core", NAMED)]:
+                          ("Names another facility", OTHER), ("Names the core", NAMED),
+                          ("Not in PubMed", OUTSIDE)]:
             df[df["status"] == st][list(cols)].rename(columns=cols).to_excel(xw, sheet_name=sheet, index=False)
         fu.rename(columns={"group": "Lab (PPMS group)", "submitters": "Submitters", "first_order": "First order",
                            "last_order": "Last order", "services": "Services",
@@ -338,6 +452,69 @@ def write_workbook(rows, fu: pd.DataFrame, s: dict, path, verdicts: dict | None 
             for col in ws.columns:
                 width = min(max(len(str(c.value or "")) for c in col) + 2, 70)
                 ws.column_dimensions[col[0].column_letter].width = width
+
+
+# ---------- Crossref client ----------
+
+class Crossref:
+    """Crossref works by author name and publication window, with a JSON cache. No key needed."""
+    API = "https://api.crossref.org/works"
+
+    def __init__(self, cache_path=None, pause=0.2):
+        self.cache_path = Path(cache_path) if cache_path else None
+        self.cache = json.loads(self.cache_path.read_text()) if self.cache_path and self.cache_path.exists() else {}
+        self.pause = pause
+
+    @staticmethod
+    def key(names, start, end):
+        return " + ".join(f"{f} {l}".strip() for l, f in names) + f"|{start:%Y-%m-%d}|{end:%Y-%m-%d}"
+
+    def search(self, names, start, end, rows=100) -> list[dict]:
+        """Works with every one of names [(last, first), ...] as an author, published in [start, end]."""
+        key = self.key(names, start, end)
+        if key not in self.cache:
+            params = {"query.author": " ".join(f"{f} {l}".strip() for l, f in names), "rows": rows,
+                      "filter": f"from-pub-date:{start:%Y-%m-%d},until-pub-date:{end:%Y-%m-%d}",
+                      "select": "DOI,type,title,container-title,issued,author"}
+            req = urllib.request.Request(f"{self.API}?{urllib.parse.urlencode(params)}",
+                                         headers={"User-Agent": "ucd-core-financials"})
+            for attempt in range(4):
+                try:
+                    d = json.loads(urllib.request.urlopen(req, timeout=60).read().decode())
+                    break
+                except Exception:
+                    if attempt == 3:
+                        raise
+                    time.sleep(2 ** attempt * 3)
+            want = {l.casefold() for l, _ in names}
+            self.cache[key] = [crossref_paper(i) for i in d.get("message", {}).get("items", [])
+                               if want <= {(a.get("family") or "").casefold() for a in i.get("author") or []}]
+            time.sleep(self.pause)
+        return self.cache[key]
+
+    def prefetch(self, pairs, workers=2):
+        from concurrent.futures import ThreadPoolExecutor
+        jobs = [([(a["last"], a["first"]), (b["last"], b["first"])], b["start"], b["end"]) for a, b in pairs]
+        todo = list({self.key(*j): j for j in jobs if self.key(*j) not in self.cache}.values())
+
+        def one(j):
+            try:
+                self.search(*j)
+            except Exception as e:
+                print(f"  Crossref search failed, will retry on the next run: {str(e)[:80]}", flush=True)
+        with ThreadPoolExecutor(workers) as ex:
+            for n, _ in enumerate(ex.map(one, todo), 1):
+                if n % 100 == 0:
+                    print(f"  {n}/{len(todo)} Crossref searches", flush=True)
+                    self.save()
+        self.save()
+
+    def save(self):
+        if self.cache_path:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.cache_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.cache))
+            tmp.replace(self.cache_path)
 
 
 # ---------- Europe PMC client ----------
