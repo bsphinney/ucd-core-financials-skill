@@ -146,6 +146,9 @@ First fill in `publications:` in `core-config.yaml` with the user:
   them (and not this core) goes to "Names another facility", not the flag list.
 - `technique_terms`: words a methods section uses when the service was used
   (`"mass spectrometry"`, `"proteom*"`; `"confocal"`, `"light-sheet"`).
+- `core_staff` (optional): staff surnames, current and past.
+- `core_grants` (optional): each grant-funded instrument and the words of its acknowledgment,
+  copied exactly from the core's instrument-acknowledgment page.
 
 ```
 python run.py publications <folder>             # every lab; 15-30 minutes, cached
@@ -159,7 +162,30 @@ Writes `out/internal/publications.xlsx`:
 - **Not in PubMed**: papers by the PI with a submitter (or at the institution) that only
   Crossref has. Their methods can't be searched, so `--excerpts` reads them; one whose full
   text never mentions the core's techniques is closed automatically.
+- **Credited, no staff author** (with `core_staff`): papers that name or credit the core with
+  no staff member among the authors.
 - **Follow up**: labs with recent orders and no paper yet.
+
+**Methods check** (with `core_grants`): `run.py publications <folder> --methods-check` reads the
+full text of every paper that credits the core and adds a "Methods not the core's" sheet. A
+paper is listed when it names a grant-funded instrument but not its acknowledgment, or describes
+mass spec without naming any instrument. The methods text the core hands out always carries
+both. A missing grant line is judged only for those instruments, and only for papers dated on or
+after the first paper in the set that carries that line. Papers on other instruments, earlier
+papers and papers without free full text are "Can't tell". Results are kept in
+`paper_review/methods_check.json`, so later runs only read new papers.
+
+The automatic check is only a first sort: generic core names ("Proteomics Core") also match
+other universities' cores, and an excerpt can miss the instrument. Have every credited paper
+read (reviewer agents in parallel, about 60 papers each, using the excerpts in
+`methods_check.json` and the Europe PMC full text). Each reviewer writes
+`paper_review/methods_review<N>.json`: a list of `{key, our_core: yes|no|unclear,
+methods: core_written|not_core_written|unclear|no_ms, confidence, evidence}`.
+`not_core_written` must be obvious: a one-line "sent to the core" or "as described
+previously", or methods for work done in the lab's own instrument or elsewhere. A missing grant
+line alone is not enough. Run `run.py publications <folder>` again: the reviewers' answers
+replace the automatic ones, and a paper that credits another institution's core drops out of
+both lists.
 
 **Then read the flagged papers in full.** Run it again with `--excerpts`: it fetches each
 flagged, other-facility, can't-check and not-in-PubMed paper's full text (Europe PMC, PubMed Central, then

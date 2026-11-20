@@ -127,6 +127,8 @@ publications:
   institution: "Davis"
   years_after: 3          # how long after a lab's last order a paper still counts
   follow_up_years: 3      # labs with orders this recent and no paper yet are listed to follow up
+  core_staff: []          # staff surnames, to list credited papers with no staff author
+  core_grants: []         # grant-funded instruments and their acknowledgments, for --methods-check (reference/config.md)
 """
 
 

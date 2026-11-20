@@ -7,6 +7,7 @@ never run by `build`.
 from __future__ import annotations
 
 import html
+import gzip
 import json
 import re
 import time
@@ -23,7 +24,7 @@ CANT_CHECK = "Can't check: no free full text"
 OTHER = "Names another facility"
 OUTSIDE = "Not in PubMed: check the methods"
 API = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-DEFAULTS = {"core_names": [], "other_facilities": [], "technique_terms": [], "technique_also": [], "institution": "Davis", "years_after": 3, "follow_up_years": 3}
+DEFAULTS = {"core_names": [], "other_facilities": [], "technique_terms": [], "technique_also": [], "institution": "Davis", "years_after": 3, "follow_up_years": 3, "core_staff": [], "core_grants": []}
 
 
 def settings(raw: dict | None, core_name: str = "") -> dict:
@@ -32,6 +33,8 @@ def settings(raw: dict | None, core_name: str = "") -> dict:
     s["technique_terms"] = [str(x) for x in s["technique_terms"] or []]
     s["other_facilities"] = [str(x) for x in s["other_facilities"] or []]
     s["technique_also"] = [str(x) for x in s["technique_also"] or []]
+    s["core_staff"] = [str(x) for x in s["core_staff"] or []]
+    s["core_grants"] = [g for g in s["core_grants"] or [] if isinstance(g, dict) and g.get("instrument")]
     return s
 
 
@@ -164,6 +167,20 @@ def _keep(paper, person, lab_people, s):
 RANK = {NAMED: 3, OTHER: 2, NOT_NAMED: 1, CANT_CHECK: 0, OUTSIDE: -1}
 
 
+def staff_authors(paper: dict, s: dict) -> list[str]:
+    """Core staff (core_staff surnames) among the authors, counted only when the author is at the
+    institution or has no affiliation listed, so a namesake elsewhere doesn't count."""
+    staff = {x.casefold(): x for x in s.get("core_staff") or []}
+    inst = str(s.get("institution", "")).casefold()
+    out = []
+    for a in _authors(paper):
+        name = staff.get(str(a.get("lastName") or "").casefold())
+        affs = _affs(a).casefold()
+        if name and (not affs or inst in affs) and name not in out:
+            out.append(name)
+    return out
+
+
 def _safe(client, query, who, failed):
     try:
         return client.search(query)
@@ -217,13 +234,13 @@ def find_papers(orders: pd.DataFrame, s: dict, client, progress=None, failed=Non
             src = paper.get("source", "MED")
             found[key] = {
                 "group": person["group"], "matched": who, "date": paper.get("firstPublicationDate", ""),
-                "title": re.sub(r"<[^>]+>", "", paper.get("title", "")),
+                "title": re.sub(r"<[^>]+>", "", html.unescape(paper.get("title", ""))),
                 "journal": ((paper.get("journalInfo") or {}).get("journal") or {}).get("title", "")
                 or ("Preprint" if src == "PPR" else ""),
                 "pmid": paper.get("pmid") or "", "pmcid": paper.get("pmcid") or "", "doi": paper.get("doi") or "",
                 "link": f"https://europepmc.org/article/{src}/{pid}", "status": status,
                 "lab_orders": f"{g['ordered'].min():%Y-%m-%d} → {g['ordered'].max():%Y-%m-%d}",
-                "preprint": src == "PPR"}
+                "preprint": src == "PPR", "staff": "; ".join(staff_authors(paper, s))}
     return sorted(found.values(), key=lambda r: (r["group"].casefold(), r["date"]))
 
 
@@ -316,7 +333,7 @@ def find_outside_pubmed(orders: pd.DataFrame, s: dict, crossref, epmc, found: li
                      "journal": paper["journalInfo"]["journal"]["title"], "pmid": "", "pmcid": "",
                      "doi": paper["doi"], "link": f"https://doi.org/{paper['doi']}", "status": OUTSIDE,
                      "lab_orders": f"{g['ordered'].min():%Y-%m-%d} → {g['ordered'].max():%Y-%m-%d}",
-                     "preprint": False})
+                     "preprint": False, "staff": "; ".join(staff_authors(paper, s))})
     return sorted(rows, key=lambda r: (r["group"].casefold(), r["date"]))
 
 
@@ -398,6 +415,84 @@ def keep_review(folder, extra: dict | None = None) -> dict:
     return done
 
 
+# ---------- were the methods the core's? ----------
+
+MC_CORE = "Grant line present: the core's methods"
+MC_NOT = "No grant line: methods probably not the core's"
+MC_VAGUE = "No instrument named: methods probably not the core's"
+MC_CANT = "Can't tell"
+
+
+def credited(rows: list[dict], verdicts: dict | None) -> list[dict]:
+    """Rows that credit the core: a full-text review found they credit it, or (not reviewed) they name it."""
+    v = verdicts or {}
+    out = []
+    for r in rows:
+        verdict = (v.get(row_key(r)) or {}).get("verdict")
+        if verdict == "credits_core" or (not verdict and r["status"] == NAMED):
+            out.append(r)
+    return out
+
+
+def load_methods_reviews(folder) -> dict:
+    """Reviewers' answers from paper_review/methods_review*.json: key -> {our_core, methods, confidence, evidence}."""
+    out = {}
+    for p in sorted(Path(folder).glob("methods_review*.json")):
+        for r in json.loads(p.read_text()):
+            if r.get("key"):
+                out[str(r["key"])] = r
+    return out
+
+
+def verdicts_from_reviews(reviews: dict, verdicts: dict) -> dict:
+    """A paper a reviewer found credits another institution's facility (a generic name like "Proteomics Core"
+    matched) gets an other_facility verdict, unless it already has a full-text verdict."""
+    out = dict(verdicts or {})
+    for k, r in (reviews or {}).items():
+        if r.get("our_core") == "no" and k not in out:
+            out[k] = {"verdict": "other_facility", "confidence": r.get("confidence", ""), "where": "",
+                      "evidence": f"Credits another institution's facility: {r.get('evidence', '')}",
+                      "action": "No action"}
+    return out
+
+
+def classify_methods(recs: list[dict], reviews: dict | None = None) -> dict:
+    """Judge each credited paper's methods by the core's instrument-grant lines (core_grants).
+
+    Only a paper that names a grant-funded instrument, dated on or after the first paper in this set that
+    carries that instrument's grant line, is judged. Other instruments, earlier papers and papers without
+    free full text are "Can't tell": a missing line there says nothing about who wrote the methods."""
+    since = {}
+    for r in recs:
+        for i in r.get("grant_lines") or []:
+            since[i] = min(since.get(i, "9999"), str(r.get("date", "")))
+    out = {}
+    for r in recs:
+        d, gi, gl = str(r.get("date", "")), r.get("grant_instruments") or [], r.get("grant_lines") or []
+        if r.get("error"):
+            res = (f"{MC_CANT}: no free full text", "")
+        elif gl:
+            res = (MC_CORE, ", ".join(gl))
+        elif gi:
+            judged = [i for i in gi if i in since and d >= since[i]]
+            res = ((MC_NOT, "; ".join(f"{i} named, no grant line (the core's papers carry it since "
+                                      f"{since[i][:7]})" for i in judged)) if judged else
+                   (f"{MC_CANT}: before the grant line appears in these papers", ", ".join(gi)))
+        elif r.get("n_ms_paragraphs") and not r.get("instruments"):
+            res = (MC_VAGUE, "Mass spec described without naming any instrument")
+        elif not r.get("n_ms_paragraphs"):
+            res = (f"{MC_CANT}: no mass spec methods found", "")
+        else:
+            res = (f"{MC_CANT}: instrument has no grant line", ", ".join(r.get("instruments") or []))
+        rv = (reviews or {}).get(r["key"]) or {}
+        read = {"core_written": MC_CORE, "not_core_written": MC_NOT, "unclear": f"{MC_CANT}: read, unclear",
+                "no_ms": f"{MC_CANT}: the core's work wasn't mass spec"}.get(rv.get("methods"))
+        if read:
+            res = (read, f"Read: {rv.get('evidence', '')}")
+        out[r["key"]] = {"methods": res[0], "methods_detail": res[1]}
+    return out
+
+
 # ---------- output ----------
 
 COLS = {"group": "Lab (PPMS group)", "matched": "Matched author", "date": "Published", "title": "Title",
@@ -405,9 +500,19 @@ COLS = {"group": "Lab (PPMS group)", "matched": "Matched author", "date": "Publi
         "lab_orders": "Lab's orders"}
 
 
-def write_workbook(rows, fu: pd.DataFrame, s: dict, path, verdicts: dict | None = None) -> None:
-    df = pd.DataFrame(rows, columns=list(COLS) + ["preprint"])
+def write_workbook(rows, fu: pd.DataFrame, s: dict, path, verdicts: dict | None = None,
+                   methods: dict | None = None) -> None:
+    s = settings(s)
+    df = pd.DataFrame(rows, columns=list(COLS) + ["preprint", "staff"])
+    df["staff"] = df["staff"].fillna("")
     cols = dict(COLS)
+    if s["core_staff"]:
+        cols["staff"] = "Core staff authors"
+    keys_all = [row_key(r) for r in rows]
+    if methods:
+        for k in ("methods", "methods_detail"):
+            df[k] = [str((methods.get(key) or {}).get(k, "")) for key in keys_all]
+        cols.update({"methods": "Methods", "methods_detail": "Methods detail"})
     if verdicts:
         keys = [row_key(r) for r in rows]
         for k in REVIEW_COLS:
@@ -432,6 +537,12 @@ def write_workbook(rows, fu: pd.DataFrame, s: dict, path, verdicts: dict | None 
         "probably used that facility.",
         f"Follow up: labs with orders in the last {s['follow_up_years']} years of the export and no matching "
         "paper since their last order.",
+        "Credited, no staff author: papers that name or credit the core with none of "
+        f"{', '.join(s['core_staff']) or '(core_staff not set)'} among the authors.",
+        "Methods not the core's (from --methods-check): credited papers that name a grant-funded instrument "
+        "without its acknowledgment, or describe mass spec without naming an instrument. Only judged for "
+        "grant-funded instruments and dates on or after the first paper carrying that grant line; read the "
+        "methods before contacting the lab.",
         "Sources: Europe PMC (europepmc.org), which includes all of PubMed, and Crossref (crossref.org). Contains lab and person names: "
         "keep inside the core.",
         f"Built {date.today():%Y-%m-%d}."]})
@@ -443,6 +554,15 @@ def write_workbook(rows, fu: pd.DataFrame, s: dict, path, verdicts: dict | None 
                           ("Names another facility", OTHER), ("Names the core", NAMED),
                           ("Not in PubMed", OUTSIDE)]:
             df[df["status"] == st][list(cols)].rename(columns=cols).to_excel(xw, sheet_name=sheet, index=False)
+        cred = {id(r) for r in credited(rows, verdicts)}
+        is_cred = pd.Series([id(r) in cred for r in rows], index=df.index, dtype=bool)
+        if s["core_staff"]:
+            df[is_cred & (df["staff"] == "")].drop_duplicates("title")[list(cols)].rename(columns=cols).to_excel(
+                xw, sheet_name="Credited, no staff author", index=False)
+        if methods:
+            flag = df["methods"].isin([MC_NOT, MC_VAGUE])
+            df[is_cred & flag].drop_duplicates("title")[list(cols)].rename(columns=cols).to_excel(
+                xw, sheet_name="Methods not the core's", index=False)
         fu.rename(columns={"group": "Lab (PPMS group)", "submitters": "Submitters", "first_order": "First order",
                            "last_order": "Last order", "services": "Services",
                            "papers_before": "Earlier matching papers"}).to_excel(xw, sheet_name="Follow up",
@@ -535,15 +655,29 @@ def compact(r: dict) -> dict:
     return out
 
 
+def _read_cache(path) -> dict:
+    """A JSON cache, gzipped when the name ends in .gz; a .gz cache not written yet starts from the old
+    uncompressed file of the same name, if there is one."""
+    if not path:
+        return {}
+    if path.exists():
+        b = path.read_bytes()
+        return json.loads(gzip.decompress(b) if path.suffix == ".gz" else b)
+    plain = path.with_suffix("") if path.suffix == ".gz" else None
+    return json.loads(plain.read_text()) if plain and plain.exists() else {}
+
+
 class EuropePMC:
     """Search with a JSON cache, so re-runs and interrupted runs don't repeat queries."""
 
     def __init__(self, cache_path=None, pause=0.1):
         self.cache_path = Path(cache_path) if cache_path else None
-        self.cache = json.loads(self.cache_path.read_text()) if self.cache_path and self.cache_path.exists() else {}
+        self.cache = _read_cache(self.cache_path)
         self.pause, self.truncated = pause, []
+        self.used = set()  # only searches this run used are saved, so old date windows don't pile up
 
     def search(self, query: str, max_results: int = 1000) -> list[dict]:
+        self.used.add(query)
         if query in self.cache:
             return self.cache[query]
         results, cursor = [], "*"
@@ -575,6 +709,8 @@ class EuropePMC:
     def prefetch(self, queries, workers=6):
         """Run uncached queries in parallel, then save the cache."""
         from concurrent.futures import ThreadPoolExecutor
+        queries = list(queries)
+        self.used.update(queries)
         todo = list(dict.fromkeys(q for q in queries if q not in self.cache))
         done = 0
         with ThreadPoolExecutor(workers) as ex:
@@ -595,5 +731,9 @@ class EuropePMC:
         if self.cache_path:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.cache_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(dict(self.cache)))
+            keep = {k: v for k, v in dict(self.cache).items() if k in self.used} if self.used else dict(self.cache)
+            data = json.dumps(keep).encode()
+            tmp.write_bytes(gzip.compress(data, 6) if self.cache_path.suffix == ".gz" else data)
             tmp.replace(self.cache_path)
+            if self.cache_path.suffix == ".gz":
+                self.cache_path.with_suffix("").unlink(missing_ok=True)  # the old uncompressed cache

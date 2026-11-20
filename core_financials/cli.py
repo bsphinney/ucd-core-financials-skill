@@ -116,7 +116,7 @@ def _build(folder: Path) -> int:
     return 0
 
 
-def _publications(folder: Path, limit=None, excerpts=False) -> int:
+def _publications(folder: Path, limit=None, excerpts=False, methods_check=False) -> int:
     from . import publications as P
     from .config import load_config
     from .inventory import scan
@@ -135,7 +135,7 @@ def _publications(folder: Path, limit=None, excerpts=False) -> int:
         keep = orders[orders["is_revenue"]].groupby("group")["ordered"].max().nlargest(limit).index
         orders = orders[orders["group"].isin(keep)]
     out = folder / "out" / "internal"
-    client = P.EuropePMC(out / "publications_cache.json")
+    client = P.EuropePMC(out / "publications_cache.json.gz")
     print("Searching Europe PMC (includes all of PubMed) and Crossref (journals PubMed doesn't index). "
           "Author names are sent to europepmc.org and api.crossref.org.")
 
@@ -160,8 +160,17 @@ def _publications(folder: Path, limit=None, excerpts=False) -> int:
     if excerpts:
         _write_excerpts(P, rows, s, client, review_dir)
     verdicts = P.load_review(review_dir)
+    mc_path = review_dir / "methods_check.json"
+    if methods_check:
+        _methods_check(P, rows, s, client, verdicts, mc_path)
+    methods = None
+    if mc_path.exists():
+        import json
+        reviews = P.load_methods_reviews(review_dir)
+        verdicts = P.verdicts_from_reviews(reviews, verdicts)
+        methods = P.classify_methods(list(json.loads(mc_path.read_text()).values()), reviews)
     path = out / "publications.xlsx"
-    P.write_workbook(rows, fu, s, path, verdicts=verdicts or None)
+    P.write_workbook(rows, fu, s, path, verdicts=verdicts or None, methods=methods)
     n = {st: sum(r["status"] == st for r in rows) for st in (P.NAMED, P.NOT_NAMED, P.CANT_CHECK, P.OTHER, P.OUTSIDE)}
     checkable = n[P.NAMED] + n[P.NOT_NAMED]
     print(f"\n{len(rows) - n[P.OUTSIDE]} papers may use the core's data:")
@@ -182,8 +191,57 @@ def _publications(folder: Path, limit=None, excerpts=False) -> int:
         ask = {k for k, v in verdicts.items() if str(v.get("action", "")).startswith("Ask")}
         print(f"  Full-text review: {len(verdicts)} papers reviewed; {len(ask)} to raise with the lab "
               "(sheet 'Ask the lab').")
+    cred = {P.row_key(r): r for r in P.credited(rows, verdicts)}
+    if s["core_staff"]:
+        print(f"  {sum(not r.get('staff') for r in cred.values())} of {len(cred)} papers that credit the core have no "
+              "core staff author (sheet 'Credited, no staff author').")
+    if methods:
+        flagged = [k for k, v in methods.items() if k in cred and v["methods"] in (P.MC_NOT, P.MC_VAGUE)]
+        print(f"  Methods check: {len(flagged)} of {len(cred)} credited papers have methods that are probably "
+              "not the core's (sheet \"Methods not the core's\").")
     print(f"\nWrote {path} (internal: lab names).")
     return 0
+
+
+def _find_doi(client, r) -> str:
+    import re
+    ppr = re.search(r"/PPR/(PPR\d+)", r.get("link", ""))
+    if r.get("doi") or not ((r.get("pmid") and not r.get("pmcid")) or ppr):
+        return r.get("doi") or ""
+    hit = client.search(f"EXT_ID:{ppr.group(1)} AND SRC:PPR" if ppr else f"EXT_ID:{r['pmid']} AND SRC:MED")
+    return (hit[0].get("doi") if hit else "") or ""
+
+
+def _methods_check(P, rows, s, client, verdicts, path: Path) -> None:
+    """Read the full text of every paper that credits the core and record its instruments and grant lines.
+    Papers checked on an earlier run are kept and not fetched again."""
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+    from . import fulltext as T
+    if not s["core_grants"]:
+        print("Add core_grants under publications: in core-config.yaml first (each grant-funded instrument and "
+              "the words of its acknowledgment); without them the methods can't be judged.")
+        return
+    done = json.loads(path.read_text()) if path.exists() else {}
+    recs = {}
+    for r in P.credited(rows, verdicts):
+        k = P.row_key(r)
+        if k not in done and k not in recs:
+            recs[k] = {"key": k, "date": r["date"], "pmid": r.get("pmid", ""), "pmcid": r.get("pmcid", ""),
+                       "doi": r.get("doi", ""), "link": r.get("link", ""), "title": r["title"]}
+    for r in recs.values():
+        r["doi"] = _find_doi(client, r)
+    ms = T.terms_regex(s["technique_terms"] + s.get("technique_also", []))
+    print(f"\nMethods check: reading {len(recs)} papers that credit the core ({len(done)} checked earlier)...", flush=True)
+    with ThreadPoolExecutor(4) as ex:
+        got = list(ex.map(lambda r: T.excerpts_for(r, s["institution"], s["core_names"], ms=ms,
+                                                   grants=s["core_grants"]), recs.values()))
+    keep = ("key", "date", "title", "link", "error", "grant_instruments", "grant_lines", "instruments",
+            "n_ms_paragraphs", "ms_paragraphs", "facility_sentences", "acknowledgments", "source")
+    for g in got:
+        done[g["key"]] = {k: (g[k][:2] if k == "ms_paragraphs" else g[k]) for k in keep if k in g}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(done, ensure_ascii=False, indent=1))
 
 
 def _write_excerpts(P, rows, s, client, review_dir: Path) -> None:
@@ -195,10 +253,7 @@ def _write_excerpts(P, rows, s, client, review_dir: Path) -> None:
     recs = [r for r in P.review_records(rows) if r["key"] not in reviewed]
     for i, r in enumerate(recs, 1):
         r["n"] = i
-        ppr = re.search(r"/PPR/(PPR\d+)", r.get("link", ""))
-        if not r["doi"] and ((r["pmid"] and not r["pmcid"]) or ppr):  # look the DOI up once
-            hit = client.search(f"EXT_ID:{ppr.group(1)} AND SRC:PPR" if ppr else f"EXT_ID:{r['pmid']} AND SRC:MED")
-            r["doi"] = (hit[0].get("doi") if hit else "") or ""
+        r["doi"] = _find_doi(client, r)  # look the DOI up once
     ms = T.terms_regex(s["technique_terms"] + s.get("technique_also", []))
     print(f"\nReading the full text of {len(recs)} papers not reviewed yet (flagged, other facility, can't check, "
           f"not in PubMed); {len(reviewed)} reviewed earlier are kept...", flush=True)
@@ -248,6 +303,9 @@ def main(argv=None) -> int:
     pp.add_argument("--limit", type=int, help="only the N labs with the most recent orders (for a quick test)")
     pp.add_argument("--excerpts", action="store_true",
                     help="also read flagged papers' full text and write excerpts for review")
+    pp.add_argument("--methods-check", action="store_true",
+                    help="read the full text of papers that credit the core and check their methods carry "
+                         "the core's instrument-grant lines")
     c = sub.add_parser("combine", help="compare several cores' benchmark.csv files")
     c.add_argument("files", nargs="+", type=Path)
     c.add_argument("--out", type=Path, default=Path("benchmark_comparison"))
@@ -259,7 +317,7 @@ def main(argv=None) -> int:
         print(f"ERROR: {folder} is not a folder")
         return 2
     if args.cmd == "publications":
-        return _publications(folder, args.limit, args.excerpts)
+        return _publications(folder, args.limit, args.excerpts, args.methods_check)
     return {"init": _init, "inventory": _inventory, "affiliations": _affiliations, "build": _build}[args.cmd](folder)
 
 

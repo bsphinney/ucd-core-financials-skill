@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import json
 import pandas as pd
 import pytest
 
@@ -402,3 +403,128 @@ def test_unchecked_outside_papers_do_not_take_a_lab_off_follow_up():
     out = {**_row("x"), "date": "2026-03-01", "status": P.OUTSIDE}
     fu = P.follow_up(ORDERS, [out], P.settings(CFG), as_of=datetime(2026, 4, 1))
     assert "Okafor, Grace" in set(fu["group"])
+
+
+def test_epmc_cache_keeps_only_searches_used_this_run(tmp_path):
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"old query, yesterday's date": [{"pmid": "1"}], "q now": [{"pmid": "2"}]}))
+    e = P.EuropePMC(p)
+    assert e.search("q now") == [{"pmid": "2"}]
+    e.save()
+    assert json.loads(p.read_text()) == {"q now": [{"pmid": "2"}]}
+
+
+def test_epmc_cache_prefetch_counts_cached_queries_as_used(tmp_path):
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"a": [], "b": [], "stale": []}))
+    e = P.EuropePMC(p)
+    e.prefetch(["a", "b"])
+    assert set(json.loads(p.read_text())) == {"a", "b"}
+
+
+# ---------- core staff as co-authors; whether the methods were the core's ----------
+
+STAFF_CFG = {**CFG, "core_staff": ["Varga", "Halloran"],
+             "core_grants": [{"instrument": "Lumos", "ack": ["S10OD000001"]},
+                             {"instrument": "timsTOF", "ack": ["Example Foundation"]}]}
+
+
+def test_core_staff_found_among_authors_at_the_institution():
+    paper = _paper("1", [_author("Okafor", "Grace", "UC Davis"), _author("Varga", "Ilona", "Genome Center, UC Davis"),
+                         _author("Halloran", "Sean", "University of Hamburg")])
+    assert P.staff_authors(paper, P.settings(STAFF_CFG)) == ["Varga"]
+
+
+def test_rows_record_core_staff_coauthors():
+    paper = _paper("7", [_author("Okafor", "Grace", "UC Davis"), _author("Varga", "Ilona", "UC Davis")])
+    rows = P.find_papers(ORDERS, P.settings(STAFF_CFG), FakeClient(technique={"Okafor G": [paper]}, named={"Okafor G": [paper]}))
+    assert rows[0]["staff"] == "Varga"
+
+
+def test_grant_signals_ignore_spacing_and_name_the_instrument():
+    from core_financials.fulltext import grant_signals
+    s = P.settings(STAFF_CFG)
+    g = grant_signals("Peptides were run on an Orbitrap Fusion Lumos. Funded by NIH S10 OD000001.", s["core_grants"])
+    assert g == {"grant_instruments": ["Lumos"], "grant_lines": ["Lumos"]}
+    g = grant_signals("Data were acquired on a timsTOF HT (Bruker).", s["core_grants"])
+    assert g == {"grant_instruments": ["timsTOF"], "grant_lines": []}
+
+
+def _mc(key, date, inst, lines, n_ms=3, error=None):
+    r = {"key": key, "date": date, "grant_instruments": inst, "grant_lines": lines, "n_ms_paragraphs": n_ms,
+         "instruments": inst}
+    if error:
+        r = {"key": key, "date": date, "error": error}
+    return r
+
+
+def test_methods_judged_only_for_grant_instruments_after_grant_lines_start():
+    recs = [_mc("a", "2019-05-01", ["Lumos"], []),          # before any paper carried the Lumos line: can't tell
+            _mc("b", "2021-03-01", ["Lumos"], ["Lumos"]),   # first Lumos grant line seen in 2021
+            _mc("c", "2023-01-01", ["Lumos"], []),          # after: flagged
+            _mc("d", "2023-01-01", [], [], n_ms=0),         # no instrument named
+            _mc("e", "2023-01-01", [], [], error="no free full text")]
+    out = P.classify_methods(recs)
+    assert out["a"]["methods"].startswith(P.MC_CANT)
+    assert out["b"]["methods"] == P.MC_CORE
+    assert out["c"]["methods"] == P.MC_NOT
+    assert out["d"]["methods"].startswith(P.MC_CANT)
+    assert out["e"]["methods"].startswith(P.MC_CANT)
+
+
+def test_workbook_lists_credited_papers_without_staff_and_methods_flags(tmp_path):
+    rows = [_row("1", P.NAMED), _row("2", P.NAMED), _row("3", P.NOT_NAMED)]
+    rows[0]["staff"], rows[1]["staff"], rows[2]["staff"] = "", "Varga", ""
+    verdicts = {"3": {"verdict": "credits_core", "confidence": "high", "where": "x", "evidence": "y", "action": "No action"}}
+    methods = {"1": {"methods": P.MC_NOT, "methods_detail": "Lumos, no S10 line"}}
+    path = tmp_path / "p.xlsx"
+    s = P.settings(STAFF_CFG)
+    P.write_workbook(rows, P.follow_up(ORDERS, rows, s), s, path, verdicts=verdicts, methods=methods)
+    no_staff = pd.read_excel(path, "Credited, no staff author")
+    assert sorted(no_staff["PMID"].astype(str)) == ["1", "3"]
+    mc = pd.read_excel(path, "Methods not the core's")
+    assert list(mc["PMID"].astype(str)) == ["1"]
+
+
+def test_epmc_cache_is_gzipped_and_picks_up_the_old_plain_file(tmp_path):
+    import gzip
+    old = tmp_path / "c.json"
+    old.write_text(json.dumps({"q": [{"pmid": "1"}]}))
+    e = P.EuropePMC(tmp_path / "c.json.gz")
+    assert e.search("q") == [{"pmid": "1"}]
+    e.save()
+    assert json.loads(gzip.decompress((tmp_path / "c.json.gz").read_bytes())) == {"q": [{"pmid": "1"}]}
+    assert not old.exists()
+    assert P.EuropePMC(tmp_path / "c.json.gz").search("q") == [{"pmid": "1"}]
+
+
+def test_reviewed_methods_override_the_automatic_check():
+    recs = [_mc("a", "2023-01-01", ["Lumos"], ["Lumos"]), _mc("b", "2023-01-01", ["Lumos"], []),
+            _mc("c", "2023-01-01", [], [], n_ms=2)]
+    reviews = {"a": {"our_core": "yes", "methods": "not_core_written", "evidence": "one line: sent to the core"},
+               "b": {"our_core": "yes", "methods": "core_written", "evidence": "full core text, ack dropped"},
+               "c": {"our_core": "yes", "methods": "unclear", "evidence": "methods not shown"}}
+    out = P.classify_methods(recs, reviews)
+    assert out["a"] == {"methods": P.MC_NOT, "methods_detail": "Read: one line: sent to the core"}
+    assert out["b"]["methods"] == P.MC_CORE
+    assert out["c"]["methods"].startswith(P.MC_CANT)
+
+
+def test_paper_reviewed_as_another_institutions_core_is_not_credited(tmp_path):
+    rows = [_row("1", P.NAMED), _row("2", P.NAMED)]
+    reviews = {"1": {"our_core": "no", "methods": "unclear", "evidence": "Example University Proteomics Facility"}}
+    verdicts = P.verdicts_from_reviews(reviews, {})
+    assert verdicts["1"]["verdict"] == "other_facility"
+    assert [r["pmid"] for r in P.credited(rows, verdicts)] == ["2"]
+
+
+def test_methods_reviews_load_from_review_files(tmp_path):
+    (tmp_path / "methods_review1.json").write_text(json.dumps([{"key": "1", "our_core": "yes", "methods": "core_written",
+                                                               "confidence": "high", "evidence": "e"}]))
+    assert P.load_methods_reviews(tmp_path)["1"]["methods"] == "core_written"
+
+
+def test_titles_lose_encoded_markup():
+    paper = _paper("8", [_author("Okafor", "Grace", "UC Davis")], title="The fungus &lt;i&gt;Caecomyces&lt;/i&gt; grows")
+    rows = P.find_papers(ORDERS, CFG, FakeClient(technique={"Okafor G": [paper]}))
+    assert rows[0]["title"] == "The fungus Caecomyces grows"

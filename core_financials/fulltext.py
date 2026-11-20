@@ -133,15 +133,30 @@ def free_copies(doi: str, getter=_get) -> list[str]:
     return list(dict.fromkeys(urls))
 
 
-def excerpts_for(paper: dict, institution="Davis", core_words=(), getter=_get, ms=MS) -> dict:
-    """Excerpts for one paper row (keys pmcid, doi). Adds 'source' or 'error'."""
+def grant_signals(text: str, core_grants) -> dict:
+    """Which of the core's grant-funded instruments the paper names, and for which of them it carries the
+    grant acknowledgment. Grant numbers match whatever their spacing or hyphens."""
+    flat = re.sub(r"[\s\-–]+", "", text).casefold()
+    inst, lines = [], []
+    for g in core_grants or []:
+        name = str(g.get("instrument", "")).strip()
+        if name and re.search(re.escape(name), text, re.I):
+            inst.append(name)
+            if any(re.sub(r"[\s\-–]+", "", str(a)).casefold() in flat for a in g.get("ack") or [] if str(a).strip()):
+                lines.append(name)
+    return {"grant_instruments": inst, "grant_lines": lines}
+
+
+def excerpts_for(paper: dict, institution="Davis", core_words=(), getter=_get, ms=MS, grants=()) -> dict:
+    """Excerpts for one paper row (keys pmcid, doi). Adds 'source' or 'error'; with grants, also the
+    grant_signals of the whole text."""
     rec = dict(paper)
     if paper.get("pmcid"):
         try:
             x, src = fetch_fulltext(paper["pmcid"], getter=getter)
             ex = excerpts_from_xml(x, institution, core_words, ms) if src != "pmc web" else \
                 excerpts_from_text(_text(x), institution, core_words, ms)
-            return {**rec, **ex, "source": src}
+            return {**rec, **ex, **(grant_signals(_text(x), grants) if grants else {}), "source": src}
         except Exception:
             pass
     if paper.get("doi"):
@@ -153,7 +168,8 @@ def excerpts_for(paper: dict, institution="Davis", core_words=(), getter=_get, m
                     continue
                 t = _text(re.sub(r"<script.*?</script>|<style.*?</style>", " ", t, flags=re.S))
                 if len(t) > 8000 and ms.search(t) and not re.search(r"verify you are human|just a moment", t[:3000], re.I):
-                    return {**rec, **excerpts_from_text(t, institution, core_words, ms), "source": url}
+                    return {**rec, **excerpts_from_text(t, institution, core_words, ms),
+                            **(grant_signals(t, grants) if grants else {}), "source": url}
         except Exception:
             pass
     return {**rec, "error": "no free full text: read it through the library"}

@@ -59,3 +59,5 @@ Used only by `run.py publications`.
 | `institution` | `"Davis"` | The matched author's affiliation must contain this, unless the PI and a submitter are both authors. |
 | `years_after` | `3` | How long after a lab's last order a paper still counts. |
 | `follow_up_years` | `3` | Labs with orders this recent and no paper since are listed to follow up. |
+| `core_staff` | `[]` | Surnames of current and past staff. A paper that credits the core with none of them as an author (at `institution`, so a namesake elsewhere doesn't count) goes on the "Credited, no staff author" sheet. |
+| `core_grants` | `[]` | Grant-funded instruments and the words of their acknowledgment, e.g. `{instrument: "Lumos", ack: ["S10OD000000"]}`. Used by `--methods-check`: a paper that credits the core and names one of these instruments but lacks its acknowledgment probably didn't use the methods text the core supplies. Grant numbers match whatever their spacing or hyphens. |
